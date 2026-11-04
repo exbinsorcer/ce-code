@@ -1,6 +1,6 @@
 // Finds answers in the book and builds the guided steps. No AI: it only reports what the book's own text shows.
 // book = { norm: [page text, lower case], raw: [page text], lines: async (page) => [{ y, items: [{ x, str }] }], total }
-import { normalizeText } from './logic.js?v=119889a3';
+import { normalizeText } from './logic.js?v=84d3cbd7';
 
 const STOP = new Set(`a about an and any are as at be been being but by can could do does for from had has have how i if in into is it
 its may me must my no not of on or our shall should so than that the their them then there these they this to under up us was we were
@@ -21,18 +21,28 @@ export function shuffled(list, rand = Math.random) {
 }
 
 /* ---------- Reading what you pasted ---------- */
+// What a course site adds around a question: its number and points, a Listen button and its course code.
+const POINTS = '(?:\\(\\s*\\d+(?:\\.\\d+)?\\s*points?\\s*\\))?';
+const NEXT_QUESTION = new RegExp(`^question\\s*\\d+\\s*${POINTS}\\s*:?$`, 'i');
+const SITE_LINE = new RegExp(`^(?:question\\s*\\d*\\s*${POINTS}\\s*(?:options)?\\s*:?|listen|[A-Z]{2,}\\d*(?:-[0-9A-Z]+){2,})$`, 'i');
+
 export function parseQuestion(raw) {
   const lines = String(raw).split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   const stemLines = [];
   const options = [];
   for (const line of lines) {
-    const m = line.match(/^\(?([A-Ha-h])[).:]\s*(.*)$/);
+    // Only the first question is read when several are pasted together.
+    if (options.length && NEXT_QUESTION.test(line)) break;
+    // A choice can start with a bullet, like "* A) ...".
+    const m = line.match(/^(?:[*•-]\s*)?\(?([A-Ha-h])[).:]\s*(.*)$/);
     if (m) options.push({ letter: m[1].toUpperCase(), text: m[2] });
     else if (options.length) {
       const last = options[options.length - 1];
       last.text = `${last.text} ${line}`.trim();
-    } else if (!/^question\s*\d*\s*(options)?\s*:?$/i.test(line)) stemLines.push(line);
+    } else if (!SITE_LINE.test(line)) stemLines.push(line);
   }
+  // Links and notes added to a choice are not part of the choice, and a note can give away an answer that may be wrong.
+  for (const o of options) o.text = o.text.replace(/\s*\[\[\d+\]\([^)]*\)\]/g, '').replace(/\s*\(Note:.*\)\.?\s*$/i, '').trim();
   const usable = options.filter((o) => o.text);
   return { stem: stemLines.join(' '), options: usable.length >= 2 ? usable : [] };
 }

@@ -1,13 +1,13 @@
 // The search page. The book is read on this device each time the page opens. No AI.
-import * as store from './store.js?v=119889a3';
-import * as viewer from './viewer.js?v=119889a3';
-import { createIndexer, lookup, readPage, rulePreview, parseSectionNumber, lookupSection, searchSection } from './rules.js?v=119889a3';
-import { createBookMap, lookupTable, parseTableNumber, rulesNamedIn, tablesNamedIn, watchWordsIn } from './map.js?v=119889a3';
-import { prepareFinder, findInBook, hintsFor, markRanges } from './finder.js?v=119889a3';
-import { checkQuestion } from './checker.js?v=119889a3';
-import { TOTAL_PAGES } from './logic.js?v=119889a3';
-import { isLockedBook, unlockBook } from './crypt.js?v=119889a3';
-import { packBook, unpackBook } from './snapshot.js?v=119889a3';
+import * as store from './store.js?v=84d3cbd7';
+import * as viewer from './viewer.js?v=84d3cbd7';
+import { createIndexer, lookup, readPage, rulePreview, parseSectionNumber, lookupSection, searchSection } from './rules.js?v=84d3cbd7';
+import { createBookMap, lookupTable, parseTableNumber, rulesNamedIn, tablesNamedIn, watchWordsIn } from './map.js?v=84d3cbd7';
+import { prepareFinder, findInBook, hintsFor, markRanges } from './finder.js?v=84d3cbd7';
+import { checkQuestion } from './checker.js?v=84d3cbd7';
+import { TOTAL_PAGES } from './logic.js?v=84d3cbd7';
+import { isLockedBook, unlockBook } from './crypt.js?v=84d3cbd7';
+import { packBook, unpackBook } from './snapshot.js?v=84d3cbd7';
 
 const $ = (id) => document.getElementById(id);
 let index = null;
@@ -788,8 +788,6 @@ function showItem(root, v) {
     if (v.level === 'read') width = span ? (room[0] * pageWide) / (span.x1 - span.x0) : room[0] * 1.3;
     canvas.style.width = `${Math.round(width)}px`;
     canvas.style.height = `${Math.round(width / ratio)}px`;
-    // Room below the page, so the rule can sit at the top of the screen even near the end of a page.
-    canvas.style.marginBottom = v.level === 'whole' ? '0' : `${Math.round(stage.clientHeight * 0.7)}px`;
   };
   refit = fit;
   // Going bigger lands on the rule, not the corner of the page.
