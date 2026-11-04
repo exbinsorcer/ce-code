@@ -1,17 +1,20 @@
 // Tests each answer choice against the book. Plain code, no AI.
 // It names a choice only when exactly one has the book behind it. Anything else is "not sure", because a wrong answer is far worse.
-import { findInBook, watchWords, negatedWords } from './finder.js?v=2c52918d';
-import { wordsOf } from './rules.js?v=2c52918d';
-import { readTable as readBookTable } from './tables.js?v=2c52918d';
-import { checkNumbers } from './check-numbers.js?v=2c52918d';
-import { checkRules } from './check-rules.js?v=2c52918d';
-import { checkSituation } from './check-situations.js?v=2c52918d';
-import { checkDefinition } from './check-definitions.js?v=2c52918d';
-import { checkWhichRule } from './check-which-rule.js?v=2c52918d';
-import { checkOutside } from './check-outside.js?v=2c52918d';
-import { checkRuleWords, rulesFor } from './check-rule-words.js?v=2c52918d';
-import { checkAbout } from './check-about.js?v=2c52918d';
-import { checkDefinitionStatement, checkCombined } from './check-definition-statements.js?v=2c52918d';
+import { findInBook, watchWords, negatedWords } from './finder.js?v=5bb51be2';
+import { wordsOf } from './rules.js?v=5bb51be2';
+import { readTable as readBookTable } from './tables.js?v=5bb51be2';
+import { checkNumbers } from './check-numbers.js?v=5bb51be2';
+import { checkRules } from './check-rules.js?v=5bb51be2';
+import { checkSituation } from './check-situations.js?v=5bb51be2';
+import { checkDefinition } from './check-definitions.js?v=5bb51be2';
+import { checkWhichRule } from './check-which-rule.js?v=5bb51be2';
+import { checkOutside } from './check-outside.js?v=5bb51be2';
+import { explainOthers } from './others.js?v=5bb51be2';
+import { checkRuleWords, rulesFor } from './check-rule-words.js?v=5bb51be2';
+import { checkAbout } from './check-about.js?v=5bb51be2';
+import { checkRuleStructure } from './check-rule-structure.js?v=5bb51be2';
+import { checkNegative } from './check-negative.js?v=5bb51be2';
+import { checkDefinitionStatement, checkCombined } from './check-definition-statements.js?v=5bb51be2';
 
 const JOINING = new Set(['and', 'or', 'of', 'the', 'a', 'an', 'in', 'on', 'to', 'for', 'with', 'use', 'used']);
 const meaningful = (text) => wordsOf(text).filter((w) => !JOINING.has(w));
@@ -123,7 +126,8 @@ function withRulePattern(f, byRule, tried) {
 
 // raw: the question as pasted, with its choices. pageData gives a page with its text and drawn lines, as app/tables.js needs.
 export async function checkQuestion(raw, book) {
-  return rated(await checkAll(raw, book));
+  // Each answer also says why every other choice loses (app/others.js).
+  return rated(await explainOthers(await checkAll(raw, book), raw, { readTable: readBookTable, ...book }));
 }
 
 // Choices that each name one column, like "Type 13", are a strong sign this is the table, wherever the walk ranked it.
@@ -167,11 +171,17 @@ async function checkAll(raw, { index, map, ready, pageData, readTable = readBook
       const situation = checkSituation(f, table);
       if (situation.status === 'answer') return { ...situation, evidence: [...situation.evidence, ...(info.see || []).slice(0, 2).map((rule) => ({ kind: 'rule', ref: rule, page: ready.rules.get(rule)?.pdfPage ?? null, box: null }))] };
     }
+    // Then a clear rule part: one choice out and the rest shown in, or a whole statement with its nots counted.
+    const neg = checkNegative(f, rulesFor(f, index, ready));
+    if (neg.status === 'answer') return { ...neg, pattern: 'Questions with not or except: read the rule, then tick off each choice.' };
     return notSure('The question turns on a negative, so it has to be read by hand.');
   }
   if (negative) {
     const byRule = await checkRules(f, { index, ready, pageData });
     if (byRule.status === 'answer') return withRulePattern(f, byRule, []);
+    // Then a clear rule part: one choice out and the rest shown in, or a whole statement with its nots counted.
+    const neg = checkNegative(f, rulesFor(f, index, ready));
+    if (neg.status === 'answer') return { ...neg, pattern: 'Questions with not or except: read the rule, then tick off each choice.' };
     return notSure('The question turns on a negative, so it has to be read by hand.');
   }
 
@@ -221,6 +231,9 @@ async function checkAll(raw, { index, map, ready, pageData, readTable = readBook
       const byRule = await checkRules(f, { index, ready, pageData });
       if (byRule.status === 'answer') return withRulePattern(f, byRule, tried);
       // Word choices against the rule part that holds the question's words, then the pages about the Code itself.
+      // The rule's structure first (when, may or shall), then its plain words.
+      const shaped = checkRuleStructure(f, rulesFor(f, index, ready));
+      if (shaped.status === 'answer') return { ...shaped, pattern: 'Find the rule, then read its conditions: before, after, or at the time.' };
       const worded = checkRuleWords(f, rulesFor(f, index, ready));
       if (worded.status === 'answer') return { ...worded, pattern: 'Find the rule part that holds the question\'s words, then compare each choice with it.' };
       const about = await checkAbout(f, { map, pageData });

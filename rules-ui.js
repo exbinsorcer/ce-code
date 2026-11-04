@@ -1,15 +1,15 @@
 // The search page. The book is read on this device each time the page opens. No AI.
-import * as store from './store.js?v=2c52918d';
-import * as viewer from './viewer.js?v=2c52918d';
-import { createIndexer, lookup, readPage, rulePreview, parseSectionNumber, lookupSection, searchSection } from './rules.js?v=2c52918d';
-import { createBookMap, lookupTable, parseTableNumber, rulesNamedIn, tablesNamedIn, watchWordsIn } from './map.js?v=2c52918d';
-import { prepareFinder, findInBook, hintsFor, markRanges } from './finder.js?v=2c52918d';
-import { checkQuestion } from './checker.js?v=2c52918d';
-import { openAnswers, matchAnswer, combineAnswers, ratingLine, percentOf, pickWords } from './answers.js?v=2c52918d';
-import { patternOf, savePattern, loadPatterns, groupPatterns, deviceStore } from './patterns.js?v=2c52918d';
-import { TOTAL_PAGES } from './logic.js?v=2c52918d';
-import { isLockedBook, unlockBook } from './crypt.js?v=2c52918d';
-import { packBook, unpackBook } from './snapshot.js?v=2c52918d';
+import * as store from './store.js?v=5bb51be2';
+import * as viewer from './viewer.js?v=5bb51be2';
+import { createIndexer, lookup, readPage, rulePreview, parseSectionNumber, lookupSection, searchSection } from './rules.js?v=5bb51be2';
+import { createBookMap, lookupTable, parseTableNumber, rulesNamedIn, tablesNamedIn, watchWordsIn } from './map.js?v=5bb51be2';
+import { prepareFinder, findInBook, hintsFor, markRanges } from './finder.js?v=5bb51be2';
+import { checkQuestion } from './checker.js?v=5bb51be2';
+import { openAnswers, matchAnswer, combineAnswers, ratingLine, percentOf, pickWords } from './answers.js?v=5bb51be2';
+import { patternOf, savePattern, loadPatterns, groupPatterns, deviceStore } from './patterns.js?v=5bb51be2';
+import { TOTAL_PAGES } from './logic.js?v=5bb51be2';
+import { isLockedBook, unlockBook } from './crypt.js?v=5bb51be2';
+import { packBook, unpackBook } from './snapshot.js?v=5bb51be2';
 
 const $ = (id) => document.getElementById(id);
 let index = null;

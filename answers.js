@@ -99,7 +99,7 @@ export function combineAnswers(checked, listed) {
 
 // The line shown under a rating. A low rating always says to ask the teacher.
 // How sure the program is, as a percent. It is an estimate set by the kind of evidence, not measured odds.
-const PERCENTS = { high: 95, medium: 75, low: 50 };
+export const PERCENTS = { high: 95, medium: 75, low: 50 };
 export function percentOf(result) {
   return PERCENTS[result?.confidence] ?? PERCENTS.medium;
 }

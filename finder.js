@@ -1,9 +1,9 @@
 // Turns a question into where to look in the book, following the steps taught in class:
 // key words, definitions, contents, index, rule titles, then any table, note or rule the rule points to.
 // It never decides the answer. It uses the question only, not the answer choices, so it cannot give one away.
-import { parseQuestion } from './engine.js?v=2c52918d';
-import { wordsOf, compareRules, lookup } from './rules.js?v=2c52918d';
-import { tablesNamedIn } from './map.js?v=2c52918d';
+import { parseQuestion } from './engine.js?v=5bb51be2';
+import { wordsOf, compareRules, lookup } from './rules.js?v=5bb51be2';
+import { tablesNamedIn } from './map.js?v=5bb51be2';
 
 const STOP = new Set(`a about above after all also an and any are as at be been being below between both but by can could do does during each every
 for from had has have how i if in into is it its of on onto or our per should so some such than that the their them then there these they this
@@ -23,6 +23,8 @@ const BOOK_WORDS = {
   identify: ['identification', 'identified'], identified: ['identification'], pipes: ['piping', 'pipe'], pipe: ['conduit', 'raceway', 'piping'], neutral: ['neutral', 'identified'], house: ['dwelling'], home: ['dwelling'],
   apartment: ['dwelling'], light: ['luminaire', 'lighting'], lights: ['luminaire', 'lighting'], fixture: ['luminaire'], fixtures: ['luminaire'],
   conduit: ['conduit', 'raceway'], gauge: ['awg', 'size'], amps: ['ampacity', 'rating'], amp: ['ampacity', 'rating'], romex: ['sheathed'], nmd: ['sheathed'],
+  old: ['existing'], older: ['existing'], upgrade: ['renovation', 'alteration'], upgraded: ['renovation', 'alteration'], renovate: ['renovation'], renovated: ['renovation'],
+  'roughed-in': ['concealed', 'covered'], roughed: ['concealed', 'covered'], hidden: ['concealed'],
   charger: ['charging'], chargers: ['charging'], ev: ['vehicle'], car: ['vehicle'], pull: ['manual'], gfi: ['gfci', 'ground', 'interrupter'], gfci: ['gfci', 'interrupter', 'ground'],
   afci: ['afci', 'arc'], disconnect: ['disconnecting', 'disconnect'], clearance: ['clearance', 'spacing'], derate: ['correction'], derating: ['correction'], tub: ['tub', 'bathtub', 'hydromassage'], sizing: ['size'], sized: ['size'],
   burial: ['cover', 'buried', 'underground'], depth: ['depth', 'cover'], height: ['height', 'clearance'], calculate: ['calculated', 'demand'], calculation: ['calculated', 'demand'], supports: ['support'], supported: ['support'],
@@ -102,6 +104,18 @@ export function hintsFor(f) {
   return hints;
 }
 
+// Long words that start the same way are forms of one word, like maintaining and maintenance. A root token, "~" and the
+// first six letters, lets titles and Index entries match those forms. It counts a little less than the word itself.
+const ROOT = 6;
+const rootOf = (w) => (w.length > ROOT && /^\p{L}+$/u.test(w) ? `~${w.slice(0, ROOT)}` : null);
+const rooted = (set) => {
+  for (const w of [...set]) {
+    const r = rootOf(w);
+    if (r) set.add(r);
+  }
+  return set;
+};
+
 export function prepareFinder(index, map) {
   const ruleBlocks = index.blocks.filter((b) => b.rule);
   const total = ruleBlocks.length + map.index.length + 1;
@@ -114,7 +128,7 @@ export function prepareFinder(index, map) {
     const words = new Set(lightWords(b.text || ''));
     addAll(words);
     const r = lookup(index, b.rule);
-    rules.set(b.rule, { rule: b.rule, words, text: b.text || '', size: words.size, titleWords: new Set(lightWords(r.title || '')), title: r.title, status: r.status, pdfPage: r.pdfPage, appendixB: r.appendixB, section: b.section });
+    rules.set(b.rule, { rule: b.rule, words, text: b.text || '', size: words.size, titleWords: rooted(new Set(lightWords(r.title || ''))), title: r.title, status: r.status, pdfPage: r.pdfPage, appendixB: r.appendixB, section: b.section });
   }
   // The same entry printed twice is one entry with all of its places.
   const once = new Map();
@@ -125,13 +139,14 @@ export function prepareFinder(index, map) {
     else for (const r of e.refs) if (!had.refs.some((x) => JSON.stringify(x) === JSON.stringify(r))) had.refs.push(r);
   }
   const entries = [...once.values()].map((e) => {
-    const leaf = new Set(lightWords(e.term));
+    const leaf = rooted(new Set(lightWords(e.term)));
     const path = new Set(lightWords(e.path.join(' ')));
     addAll(path);
+    rooted(path);
     return { ...e, leaf, pathWords: path };
   });
-  const tables = [...map.tables.values()].map((t) => ({ ...t, words: new Set(lightWords(t.title || '')), bodyWords: new Set(lightWords(t.text || '')) }));
-  const headings = map.contents.filter((c) => c.section !== null).map((c) => ({ ...c, words: new Set(lightWords(c.title)) }));
+  const tables = [...map.tables.values()].map((t) => ({ ...t, words: rooted(new Set(lightWords(t.title || ''))), bodyWords: new Set(lightWords(t.text || '')) }));
+  const headings = map.contents.filter((c) => c.section !== null).map((c) => ({ ...c, words: rooted(new Set(lightWords(c.title))) }));
   // A rule sits under a heading in the Contents. Those words count as part of the rule, as they do for a reader.
   for (const r of rules.values()) {
     const here = headings.filter((h) => !h.top && h.section === r.section && h.page);
@@ -149,7 +164,13 @@ export function prepareFinder(index, map) {
   for (const s of sections.values()) for (const w of s.titleWords) titleCounts.set(w, (titleCounts.get(w) || 0) + 1);
   const defs = map.definitions.map((d) => ({ ...d, words: lightWords(d.term) }));
   for (const d of defs) addAll(d.words);
-  const idf = (w) => Math.log(1 + total / (1 + (df.get(w) || 0)));
+  // A root is as common as all the words that share it.
+  const rootDf = new Map();
+  for (const [w, c] of df) {
+    const r = rootOf(w);
+    if (r) rootDf.set(r, (rootDf.get(r) || 0) + c);
+  }
+  const idf = (w) => Math.log(1 + total / (1 + ((w[0] === '~' ? rootDf : df).get(w) || 0)));
   const ruleList = [...index.rules.keys()];
   const tableLabels = [...map.tables.keys()];
   const tableByLabel = new Map(tables.map((t) => [t.label, t]));
@@ -198,7 +219,7 @@ export function findInBook(raw, index, map, ready, { dropped = [] } = {}) {
     const fresh = extra.filter((e) => !own.includes(light(e)));
     if (fresh.length) bookWords.push({ word: w, book: fresh });
     const early = original.indexOf(w) < 3 ? 1.25 : 1;
-    own.forEach((s, i) => ideas.push({ words: new Set([s, ...(i === 0 ? extra.flatMap((e) => lightWords(e)) : [])]), early }));
+    own.forEach((s, i) => ideas.push({ words: rooted(new Set([s, ...(i === 0 ? extra.flatMap((e) => lightWords(e)) : [])])), early }));
   }
   const allWords = new Set(ideas.flatMap((i) => [...i.words]));
   const defWords = asked ? lightWords(asked) : null;

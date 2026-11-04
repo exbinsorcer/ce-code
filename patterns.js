@@ -1,7 +1,7 @@
 // The pattern book: the route each of your own questions took through the book, so you can learn the routes by heart.
 // No DOM and no network. It keeps only your question and the route as numbers and your own words, never text from the book.
 // It gives no score, no streak and no new questions.
-import { wordsOf } from './rules.js?v=2c52918d';
+import { wordsOf } from './rules.js?v=5bb51be2';
 
 // What a question asks for, from its own words. The first that fits wins.
 const ASKS = [

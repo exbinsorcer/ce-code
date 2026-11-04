@@ -3,7 +3,7 @@
 //
 // It uses the text pieces and their positions, plus the thin lines the book draws between cells.
 // When a value could belong to two rows or two columns, the table is marked 'unsure' with the reason. It never guesses.
-import { toItems } from './rules.js?v=2c52918d';
+import { toItems } from './rules.js?v=5bb51be2';
 
 // The PDF.js drawing step numbers this file needs. They match the copy in app/vendor/pdfjs.
 const OPS = { save: 10, restore: 11, transform: 12, constructPath: 91, endPath: 28, fills: new Set([20, 21, 22, 23, 24, 25, 26, 27]) };
@@ -569,15 +569,24 @@ function readRows(part, stub, reasons) {
       const near = (i) => gap(i) <= 1.3 * Math.max(ordered[i].l.size, ordered[i + 1].l.size);
       const at = ordered.map((ln, i) => (rowOf.has(ln) ? i : -1)).filter((i) => i >= 0);
       const unsure = () => reasons.push(`a wrapped line on page ${p} could belong to two rows`);
+      // In a table with cell borders, a drawn line across the label column between two text lines is a row boundary,
+      // and no line between them means they share one cell. Either way the drawing settles it, as it does for a reader.
+      const labelCol = cols[stub];
+      const ruleBetween = (i) => {
+        if (!ruled || !labelCol) return null;
+        const [upper, lower] = [ordered[i], ordered[i + 1]];
+        const x = (labelCol.x0 + labelCol.x1) / 2;
+        return hAcross(reg, x, lower.l.y + 0.7 * lower.l.size, upper.l.y - 0.1 * upper.l.size).length > 0;
+      };
       for (let i = at[0] - 1; i >= 0; i--) {
-        if (!near(i)) {
+        if (!near(i) && ruleBetween(i) !== false) {
           unsure();
           break;
         }
         rowOf.set(ordered[i], rowOf.get(ordered[at[0]]));
       }
       for (let i = at[at.length - 1] + 1; i < ordered.length; i++) {
-        if (!near(i - 1)) {
+        if (!near(i - 1) && ruleBetween(i - 1) !== false) {
           unsure();
           break;
         }
@@ -588,6 +597,13 @@ function readRows(part, stub, reasons) {
         if (to - from < 2) continue;
         const gaps = [];
         for (let i = from; i < to; i++) gaps.push(gap(i));
+        // Exactly one drawn line between the two rows marks where one ends and the next begins.
+        const drawn = [];
+        for (let i = from; i < to; i++) if (ruleBetween(i)) drawn.push(i - from);
+        if (drawn.length === 1) {
+          for (let i = from + 1; i < to; i++) rowOf.set(ordered[i], rowOf.get(ordered[i <= from + drawn[0] ? from : to]));
+          continue;
+        }
         const widest = gaps.indexOf(Math.max(...gaps));
         const others = gaps.filter((_, i) => i !== widest);
         if (!others.every((g, i) => g * 1.3 <= gaps[widest] && near(from + (i < widest ? i : i + 1)))) {
