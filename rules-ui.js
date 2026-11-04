@@ -1,15 +1,15 @@
 // The search page. The book is read on this device each time the page opens. No AI.
-import * as store from './store.js?v=5c98d27e';
-import * as viewer from './viewer.js?v=5c98d27e';
-import { createIndexer, lookup, readPage, rulePreview, parseSectionNumber, lookupSection, searchSection } from './rules.js?v=5c98d27e';
-import { createBookMap, lookupTable, parseTableNumber, rulesNamedIn, tablesNamedIn, watchWordsIn } from './map.js?v=5c98d27e';
-import { prepareFinder, findInBook, hintsFor, markRanges } from './finder.js?v=5c98d27e';
-import { checkQuestion } from './checker.js?v=5c98d27e';
-import { openAnswers, matchAnswer, combineAnswers, ratingLine, percentOf, pickWords } from './answers.js?v=5c98d27e';
-import { patternOf, savePattern, loadPatterns, groupPatterns, deviceStore } from './patterns.js?v=5c98d27e';
-import { TOTAL_PAGES } from './logic.js?v=5c98d27e';
-import { isLockedBook, unlockBook } from './crypt.js?v=5c98d27e';
-import { packBook, unpackBook } from './snapshot.js?v=5c98d27e';
+import * as store from './store.js?v=2c52918d';
+import * as viewer from './viewer.js?v=2c52918d';
+import { createIndexer, lookup, readPage, rulePreview, parseSectionNumber, lookupSection, searchSection } from './rules.js?v=2c52918d';
+import { createBookMap, lookupTable, parseTableNumber, rulesNamedIn, tablesNamedIn, watchWordsIn } from './map.js?v=2c52918d';
+import { prepareFinder, findInBook, hintsFor, markRanges } from './finder.js?v=2c52918d';
+import { checkQuestion } from './checker.js?v=2c52918d';
+import { openAnswers, matchAnswer, combineAnswers, ratingLine, percentOf, pickWords } from './answers.js?v=2c52918d';
+import { patternOf, savePattern, loadPatterns, groupPatterns, deviceStore } from './patterns.js?v=2c52918d';
+import { TOTAL_PAGES } from './logic.js?v=2c52918d';
+import { isLockedBook, unlockBook } from './crypt.js?v=2c52918d';
+import { packBook, unpackBook } from './snapshot.js?v=2c52918d';
 
 const $ = (id) => document.getElementById(id);
 let index = null;
@@ -22,6 +22,7 @@ let updateReady = false; // A new version is saved, and the page moves to it whe
 let locked = false; // Locked: Back cannot leave the app, and full screen comes back when you tap.
 let hasPatterns = false; // True once a route is saved for the pattern book.
 let guarded = false; // True while an extra history entry is there to catch the phone's Back button.
+let droppingGuard = false; // True while a leftover Back entry is on its way out.
 
 const say = (t) => {
   $('say').textContent = t;
@@ -160,7 +161,10 @@ function open(view) {
   draw();
 }
 function goBack() {
-  views.pop();
+  // In a question, Back goes one step at a time, the same from every Back control. Only the first step leaves.
+  const top = views[views.length - 1];
+  if (top?.type === 'walk' && top.at > 0) top.at -= 1;
+  else views.pop();
   draw();
 }
 function draw() {
@@ -1060,14 +1064,25 @@ document.addEventListener('click', (e) => {
 }, true);
 
 // An extra history entry catches the phone's Back button, so Back moves through the app instead of leaving it.
+// Back at the start with nothing to catch leaves the app on the first press, so a leftover entry is taken away.
 function keepBack() {
-  if ((views.length || locked) && !guarded) {
+  const need = views.length > 0 || locked;
+  if (need && !guarded) {
     history.pushState({ ceBack: true }, '');
     guarded = true;
+  } else if (!need && guarded) {
+    guarded = false;
+    droppingGuard = true;
+    history.back();
   }
 }
 addEventListener('popstate', () => {
   guarded = false;
+  if (droppingGuard) {
+    droppingGuard = false;
+    keepBack();
+    return;
+  }
   if (views.length) goBack();
   else if (locked) toast('Locked. Tap the lock to leave.');
   keepBack();

@@ -1,17 +1,17 @@
 // Tests each answer choice against the book. Plain code, no AI.
 // It names a choice only when exactly one has the book behind it. Anything else is "not sure", because a wrong answer is far worse.
-import { findInBook, watchWords, negatedWords } from './finder.js?v=5c98d27e';
-import { wordsOf } from './rules.js?v=5c98d27e';
-import { readTable as readBookTable } from './tables.js?v=5c98d27e';
-import { checkNumbers } from './check-numbers.js?v=5c98d27e';
-import { checkRules } from './check-rules.js?v=5c98d27e';
-import { checkSituation } from './check-situations.js?v=5c98d27e';
-import { checkDefinition } from './check-definitions.js?v=5c98d27e';
-import { checkWhichRule } from './check-which-rule.js?v=5c98d27e';
-import { checkOutside } from './check-outside.js?v=5c98d27e';
-import { checkRuleWords, rulesFor } from './check-rule-words.js?v=5c98d27e';
-import { checkAbout } from './check-about.js?v=5c98d27e';
-import { checkDefinitionStatement, checkCombined } from './check-definition-statements.js?v=5c98d27e';
+import { findInBook, watchWords, negatedWords } from './finder.js?v=2c52918d';
+import { wordsOf } from './rules.js?v=2c52918d';
+import { readTable as readBookTable } from './tables.js?v=2c52918d';
+import { checkNumbers } from './check-numbers.js?v=2c52918d';
+import { checkRules } from './check-rules.js?v=2c52918d';
+import { checkSituation } from './check-situations.js?v=2c52918d';
+import { checkDefinition } from './check-definitions.js?v=2c52918d';
+import { checkWhichRule } from './check-which-rule.js?v=2c52918d';
+import { checkOutside } from './check-outside.js?v=2c52918d';
+import { checkRuleWords, rulesFor } from './check-rule-words.js?v=2c52918d';
+import { checkAbout } from './check-about.js?v=2c52918d';
+import { checkDefinitionStatement, checkCombined } from './check-definition-statements.js?v=2c52918d';
 
 const JOINING = new Set(['and', 'or', 'of', 'the', 'a', 'an', 'in', 'on', 'to', 'for', 'with', 'use', 'used']);
 const meaningful = (text) => wordsOf(text).filter((w) => !JOINING.has(w));

@@ -2,8 +2,8 @@
 // and "all of the above". Plain code, no AI. It finds the one rule part that holds the question's words, then tests each
 // choice against that part's own words. Anything unclear is "not sure", because a wrong answer is far worse.
 // Number-with-unit choices belong to app/check-rules.js.
-import { splitRule } from './check-rules.js?v=5c98d27e';
-import { rootOf, rootsOf } from './check-situations.js?v=5c98d27e';
+import { splitRule } from './check-rules.js?v=2c52918d';
+import { rootOf, rootsOf } from './check-situations.js?v=2c52918d';
 
 const LIGHT = new Set(['a', 'an', 'the', 'of', 'to', 'and', 'or', 'in', 'on', 'for', 'with', 'by', 'is', 'are', 'be', 'been', 'has', 'have', 'that', 'which', 'it', 'its', 'as', 'at', 'from', 'this', 'then', 'there', 'their', 'any', 'will', 'must', 'shall', 'may', 'can', 'if', 'when', 'after', 'before', 'only', 'all', 'above', 'following', 'code', 'ce', 'rule', 'electrical']);
 const NEGATIVE = new Set(['not', 'no', 'never', 'nor', 'without', 'cannot']);
