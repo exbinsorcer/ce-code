@@ -3,8 +3,8 @@
 // - "which is not" and "except": exactly one choice fails the part and every other choice is shown to pass it
 // - true or false: the whole statement sits in one part with no exception, and the "not"s decide it
 // Anything else stays not sure.
-import { ruleParts, bestPart } from './check-rule-words.js?v=5bb51be2';
-import { ideasOf } from './rule-structure.js?v=5bb51be2';
+import { ruleParts, bestPart } from './check-rule-words.js?v=a8290e52';
+import { ideasOf } from './rule-structure.js?v=a8290e52';
 
 const notSure = (why) => ({ status: 'not-sure', choice: null, confidence: null, because: why, outside: false, evidence: [], why: [why] });
 const NEG = /\b(?:not|no|never|without|cannot|isn't|aren't|doesn't|don't)\b/gi;

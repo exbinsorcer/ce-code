@@ -1,20 +1,21 @@
 // Tests each answer choice against the book. Plain code, no AI.
 // It names a choice only when exactly one has the book behind it. Anything else is "not sure", because a wrong answer is far worse.
-import { findInBook, watchWords, negatedWords } from './finder.js?v=5bb51be2';
-import { wordsOf } from './rules.js?v=5bb51be2';
-import { readTable as readBookTable } from './tables.js?v=5bb51be2';
-import { checkNumbers } from './check-numbers.js?v=5bb51be2';
-import { checkRules } from './check-rules.js?v=5bb51be2';
-import { checkSituation } from './check-situations.js?v=5bb51be2';
-import { checkDefinition } from './check-definitions.js?v=5bb51be2';
-import { checkWhichRule } from './check-which-rule.js?v=5bb51be2';
-import { checkOutside } from './check-outside.js?v=5bb51be2';
-import { explainOthers } from './others.js?v=5bb51be2';
-import { checkRuleWords, rulesFor } from './check-rule-words.js?v=5bb51be2';
-import { checkAbout } from './check-about.js?v=5bb51be2';
-import { checkRuleStructure } from './check-rule-structure.js?v=5bb51be2';
-import { checkNegative } from './check-negative.js?v=5bb51be2';
-import { checkDefinitionStatement, checkCombined } from './check-definition-statements.js?v=5bb51be2';
+import { findInBook, watchWords, negatedWords } from './finder.js?v=a8290e52';
+import { wordsOf } from './rules.js?v=a8290e52';
+import { readTable as readBookTable } from './tables.js?v=a8290e52';
+import { checkNumbers } from './check-numbers.js?v=a8290e52';
+import { checkRules } from './check-rules.js?v=a8290e52';
+import { checkSituation } from './check-situations.js?v=a8290e52';
+import { checkDefinition } from './check-definitions.js?v=a8290e52';
+import { checkWhichRule } from './check-which-rule.js?v=a8290e52';
+import { checkOutside } from './check-outside.js?v=a8290e52';
+import { explainOthers } from './others.js?v=a8290e52';
+import { checkCalculation } from './calc/check.js?v=a8290e52';
+import { checkRuleWords, rulesFor } from './check-rule-words.js?v=a8290e52';
+import { checkAbout } from './check-about.js?v=a8290e52';
+import { checkRuleStructure } from './check-rule-structure.js?v=a8290e52';
+import { checkNegative } from './check-negative.js?v=a8290e52';
+import { checkDefinitionStatement, checkCombined } from './check-definition-statements.js?v=a8290e52';
 
 const JOINING = new Set(['and', 'or', 'of', 'the', 'a', 'an', 'in', 'on', 'to', 'for', 'with', 'use', 'used']);
 const meaningful = (text) => wordsOf(text).filter((w) => !JOINING.has(w));
@@ -156,6 +157,9 @@ async function checkAll(raw, { index, map, ready, pageData, readTable = readBook
   const which = checkWhichRule(f, ready.rules);
   if (which.status === 'answer') return { ...which, pattern: 'Choices that are rule numbers: read each rule title.' };
   if (!readTable || !pageData) return notSure('This kind of question cannot be checked yet.');
+  // A math question is worked with the calculators (app/calc/check.js), when it gives every number they need.
+  const worked = await checkCalculation(f, { map, ready, pageData, readTable });
+  if (worked.status === 'answer' || worked.calculation) return worked;
   // A question that turns on a negative is easy to get backwards, so a table alone does not settle it.
   const negative = f.negated.length || f.watch.some((w) => /\b(not|no|except|unless|without|never)\b/.test(w));
   // "Not more than" and "not less than" are limits, not negatives. Only rule wording reads them; tables still stop.

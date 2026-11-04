@@ -1,9 +1,9 @@
 // Turns a question into where to look in the book, following the steps taught in class:
 // key words, definitions, contents, index, rule titles, then any table, note or rule the rule points to.
 // It never decides the answer. It uses the question only, not the answer choices, so it cannot give one away.
-import { parseQuestion } from './engine.js?v=5bb51be2';
-import { wordsOf, compareRules, lookup } from './rules.js?v=5bb51be2';
-import { tablesNamedIn } from './map.js?v=5bb51be2';
+import { parseQuestion } from './engine.js?v=a8290e52';
+import { wordsOf, compareRules, lookup } from './rules.js?v=a8290e52';
+import { tablesNamedIn } from './map.js?v=a8290e52';
 
 const STOP = new Set(`a about above after all also an and any are as at be been being below between both but by can could do does during each every
 for from had has have how i if in into is it its of on onto or our per should so some such than that the their them then there these they this
@@ -24,10 +24,15 @@ const BOOK_WORDS = {
   apartment: ['dwelling'], light: ['luminaire', 'lighting'], lights: ['luminaire', 'lighting'], fixture: ['luminaire'], fixtures: ['luminaire'],
   conduit: ['conduit', 'raceway'], gauge: ['awg', 'size'], amps: ['ampacity', 'rating'], amp: ['ampacity', 'rating'], romex: ['sheathed'], nmd: ['sheathed'],
   old: ['existing'], older: ['existing'], upgrade: ['renovation', 'alteration'], upgraded: ['renovation', 'alteration'], renovate: ['renovation'], renovated: ['renovation'],
-  'roughed-in': ['concealed', 'covered'], roughed: ['concealed', 'covered'], hidden: ['concealed'],
+  'roughed-in': ['concealed', 'covered', 'inaccessible'], roughed: ['concealed', 'covered', 'inaccessible'], hidden: ['concealed'],
   charger: ['charging'], chargers: ['charging'], ev: ['vehicle'], car: ['vehicle'], pull: ['manual'], gfi: ['gfci', 'ground', 'interrupter'], gfci: ['gfci', 'interrupter', 'ground'],
   afci: ['afci', 'arc'], disconnect: ['disconnecting', 'disconnect'], clearance: ['clearance', 'spacing'], derate: ['correction'], derating: ['correction'], tub: ['tub', 'bathtub', 'hydromassage'], sizing: ['size'], sized: ['size'],
   burial: ['cover', 'buried', 'underground'], depth: ['depth', 'cover'], height: ['height', 'clearance'], calculate: ['calculated', 'demand'], calculation: ['calculated', 'demand'], supports: ['support'], supported: ['support'],
+  revoke: ['reject', 'rejection'], revoked: ['reject', 'rejection'], withdrawn: ['reject'], cancelled: ['reject'],
+  reconnect: ['reconnection'], reconnected: ['reconnection'], 're-connected': ['reconnection'], 're-connect': ['reconnection'], disconnected: ['cut', 'reconnection'],
+  bill: ['payment', 'bills'], bills: ['payment', 'bills'], arrears: ['payment', 'bills'],
+  maintain: ['maintenance'], maintaining: ['maintenance'], maintained: ['maintenance'], servicing: ['maintenance'],
+  drywall: ['inaccessible', 'concealed'], 'rough-in': ['inaccessible', 'concealed'],
   fit: ['fill', 'number'], classified: ['classification'], classify: ['classification'], pv: ['photovoltaic'], solar: ['photovoltaic', 'solar'],
 };
 
@@ -189,7 +194,21 @@ export function prepareFinder(index, map) {
     e.places = out;
     return out;
   };
-  return { rules, entries, tables, headings, defs, idf, ruleList, tableLabels, sections, titleCounts, placesOf };
+  // The book's own Index "See" entries, read at run time: a one-word entry that sends the reader to another term, as
+  // "Live, see Energized" does, makes the two words one idea. Nothing from the book is kept in the source.
+  const seeWords = new Map();
+  for (const e of map.index || []) {
+    if ((e.path || []).length !== 1) continue;
+    const own = lightWords(e.term || '');
+    if (own.length !== 1) continue;
+    for (const ref of e.refs || []) {
+      if (ref.type !== 'see' || !ref.term) continue;
+      const to = lightWords(ref.term).filter((w) => !STOP_WORDS.has(w));
+      if (!to.length || to.length > 3) continue;
+      seeWords.set(own[0], [...new Set([...(seeWords.get(own[0]) || []), ...to])]);
+    }
+  }
+  return { rules, entries, tables, headings, defs, idf, ruleList, tableLabels, sections, titleCounts, placesOf, seeWords };
 }
 
 function expandRange(ready, from, to) {
@@ -215,7 +234,7 @@ export function findInBook(raw, index, map, ready, { dropped = [] } = {}) {
   for (const w of keywords) {
     if (asked && ASKING_WORDS.has(w)) continue;
     const own = lightWords(w);
-    const extra = BOOK_WORDS[w] || [];
+    const extra = [...new Set([...(BOOK_WORDS[w] || []), ...(ready.seeWords?.get(light(w)) || ready.seeWords?.get(w) || [])])];
     const fresh = extra.filter((e) => !own.includes(light(e)));
     if (fresh.length) bookWords.push({ word: w, book: fresh });
     const early = original.indexOf(w) < 3 ? 1.25 : 1;

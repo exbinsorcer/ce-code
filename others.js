@@ -1,10 +1,10 @@
 // Says why each other choice loses, from the same place in the book that backs the answer. Plain code, no AI.
 // It never changes which choice is picked. If another choice comes close, the rating drops one step and says why.
 // It holds no book text; it reads the place again at run time.
-import { wordsOf } from './rules.js?v=5bb51be2';
-import { parseQuestion } from './engine.js?v=5bb51be2';
-import { splitRule } from './check-rules.js?v=5bb51be2';
-import { numbersIn } from './check-numbers.js?v=5bb51be2';
+import { wordsOf } from './rules.js?v=a8290e52';
+import { parseQuestion } from './engine.js?v=a8290e52';
+import { splitRule } from './check-rules.js?v=a8290e52';
+import { numbersIn } from './check-numbers.js?v=a8290e52';
 
 const LIGHT = new Set(['a', 'an', 'and', 'or', 'of', 'the', 'to', 'in', 'on', 'for', 'with', 'by', 'at', 'is', 'are', 'be', 'it', 'its', 'as', 'that', 'this', 'from']);
 const keyWords = (text) => [...new Set(wordsOf(text).filter((w) => !LIGHT.has(w) && !/^\d/.test(w)))];
@@ -122,4 +122,20 @@ export async function explainOthers(result, raw, book) {
     confidence: DOWN[result.confidence] || 'low',
     because: `${String(result.because || '').replace(/[.\s]*$/, '.')} ${near.join(' and ')} come${near.length > 1 ? '' : 's'} close, so the rating is one step lower.`.trim(),
   };
+}
+
+// On a not sure answer: choices the closest place doesn't mention at all. It only goes by that one place, so it stays strict.
+// It says nothing if the place mentions no choice, since it may be the wrong place, or if fewer than two choices would be left,
+// since that would hint at an answer nobody has proven.
+export function ruledOutBy(options, placeText, placeName) {
+  if (!placeText || options.some((c) => /^(true|false|yes|no)$|\b(all|none|both) of\b|\band\b.*\bapply\b/i.test(c.text.trim()))) return [];
+  const words = new Set(wordsOf(placeText));
+  const numbers = new Set(numbersIn(placeText));
+  const missing = options.filter((c) => {
+    const k = keyWords(c.text);
+    const n = numbersIn(c.text);
+    return k.length + n.length > 0 && !k.some((w) => words.has(w)) && !n.some((x) => numbers.has(x));
+  });
+  if (!missing.length || options.length - missing.length < 2) return [];
+  return missing.map((c) => ({ letter: c.letter, say: `${placeName} doesn't mention this.` }));
 }

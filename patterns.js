@@ -1,7 +1,7 @@
 // The pattern book: the route each of your own questions took through the book, so you can learn the routes by heart.
 // No DOM and no network. It keeps only your question and the route as numbers and your own words, never text from the book.
 // It gives no score, no streak and no new questions.
-import { wordsOf } from './rules.js?v=5bb51be2';
+import { wordsOf } from './rules.js?v=a8290e52';
 
 // What a question asks for, from its own words. The first that fits wins.
 const ASKS = [
@@ -45,6 +45,24 @@ export function groupPatterns(list) {
     groups.get(k).questions.push(item.question);
   }
   return [...groups.values()].sort((a, b) => Number(b.pattern.clear) - Number(a.pattern.clear) || b.questions.length - a.questions.length);
+}
+
+// A route's own name, so a miss can be remembered between drills.
+export const routeKey = (pattern) => pattern.key || [pattern.asks, pattern.scope, pattern.place?.kind, pattern.place?.id].join(' | ');
+
+// The routes to practise: clear ones only, the ones you have missed most first. Each uses its first saved question.
+export function drillDeck(groups, missed = {}) {
+  return groups.filter((g) => g.pattern.clear)
+    .map((g) => ({ key: routeKey(g.pattern), question: g.questions[0], pattern: g.pattern }))
+    .sort((a, b) => (missed[b.key] || 0) - (missed[a.key] || 0));
+}
+
+// A miss is kept until you get that route on the first try.
+export function noteDrill(missed, key, hadIt) {
+  const next = { ...missed };
+  if (hadIt) delete next[key];
+  else next[key] = (next[key] || 0) + 1;
+  return next;
 }
 
 // The steps a reader retraces, in order.

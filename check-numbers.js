@@ -2,7 +2,7 @@
 // Plain code, no AI, no DOM and no network. It reads the table the way a person does: the table, then the row, then the column.
 // It names a choice only when exactly one table, one row, one column and one choice fit. Anything else is "not sure".
 // It holds no wording or values from the book. Those come from the owner's book at run time.
-import { wordsOf as bookWords } from './rules.js?v=5bb51be2';
+import { wordsOf as bookWords } from './rules.js?v=a8290e52';
 
 const notSure = (why, extra = {}) => ({ status: 'not-sure', choice: null, evidence: [], why: [why], mistake: null, ...extra });
 
@@ -18,7 +18,7 @@ const plainWords = (text) => wordsOf(text).filter((w) => !PLAIN.has(w));
 
 // The book writes 1/0 as 0, 2/0 as 00 and so on.
 const AUGHT = { '1/0': '0', '2/0': '00', '3/0': '000', '4/0': '0000' };
-const sizeKey = (s) => AUGHT[s] || s.replace(/^0+(?=[1-9])/, '');
+export const sizeKey = (s) => AUGHT[s] || s.replace(/^0+(?=[1-9])/, '');
 
 // Conductor sizes in a piece of text: "#6", "No. 6", "6 AWG", "500 kcmil", "1/0" and "2/0 AWG".
 export function sizesIn(text) {

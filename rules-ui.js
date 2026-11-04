@@ -1,15 +1,18 @@
 // The search page. The book is read on this device each time the page opens. No AI.
-import * as store from './store.js?v=5bb51be2';
-import * as viewer from './viewer.js?v=5bb51be2';
-import { createIndexer, lookup, readPage, rulePreview, parseSectionNumber, lookupSection, searchSection } from './rules.js?v=5bb51be2';
-import { createBookMap, lookupTable, parseTableNumber, rulesNamedIn, tablesNamedIn, watchWordsIn } from './map.js?v=5bb51be2';
-import { prepareFinder, findInBook, hintsFor, markRanges } from './finder.js?v=5bb51be2';
-import { checkQuestion } from './checker.js?v=5bb51be2';
-import { openAnswers, matchAnswer, combineAnswers, ratingLine, percentOf, pickWords } from './answers.js?v=5bb51be2';
-import { patternOf, savePattern, loadPatterns, groupPatterns, deviceStore } from './patterns.js?v=5bb51be2';
-import { TOTAL_PAGES } from './logic.js?v=5bb51be2';
-import { isLockedBook, unlockBook } from './crypt.js?v=5bb51be2';
-import { packBook, unpackBook } from './snapshot.js?v=5bb51be2';
+import * as store from './store.js?v=a8290e52';
+import * as viewer from './viewer.js?v=a8290e52';
+import { createIndexer, lookup, readPage, rulePreview, parseSectionNumber, lookupSection, searchSection } from './rules.js?v=a8290e52';
+import { createBookMap, lookupTable, parseTableNumber, rulesNamedIn, tablesNamedIn, watchWordsIn } from './map.js?v=a8290e52';
+import { prepareFinder, findInBook, hintsFor, markRanges } from './finder.js?v=a8290e52';
+import { checkQuestion } from './checker.js?v=a8290e52';
+import { openAnswers, matchAnswer, combineAnswers, ratingLine, percentOf, pickWords, PERCENTS } from './answers.js?v=a8290e52';
+import { ruledOutBy } from './others.js?v=a8290e52';
+import { splitQuiz, quizForClaude } from './quizzes.js?v=a8290e52';
+import { GRADED, NEEDED } from './graded.js?v=a8290e52';
+import { patternOf, savePattern, loadPatterns, groupPatterns, deviceStore, drillDeck, noteDrill } from './patterns.js?v=a8290e52';
+import { TOTAL_PAGES } from './logic.js?v=a8290e52';
+import { isLockedBook, unlockBook } from './crypt.js?v=a8290e52';
+import { packBook, unpackBook } from './snapshot.js?v=a8290e52';
 
 const $ = (id) => document.getElementById(id);
 let index = null;
@@ -20,7 +23,7 @@ let lockedHere = false; // True when the locked book was made on this device.
 let views = []; // Where you have been, so Back works from any screen.
 let updateReady = false; // A new version is saved, and the page moves to it when you are not in the middle of something.
 let locked = false; // Locked: Back cannot leave the app, and full screen comes back when you tap.
-let hasPatterns = false; // True once a route is saved for the pattern book.
+let tab = 'find'; // Which of the three tabs is showing: find, practice or quizzes.
 let guarded = false; // True while an extra history entry is there to catch the phone's Back button.
 let droppingGuard = false; // True while a leftover Back entry is on its way out.
 
@@ -64,17 +67,14 @@ async function readBook(blob, savedMap = null, remember = false) {
   $('lockNow').hidden = !lockedBytes;
   $('q').disabled = false;
   $('go').disabled = false;
-  // The Pattern book button shows once at least one route is saved on this device.
-  deviceStore().then(loadPatterns).then((list) => {
-    hasPatterns = list.length > 0;
-    showPatternButton();
-  }).catch(() => {});
+  drawTabs();
   resumeSession();
   if (!views.length) $('q').focus();
 }
 
 /* ---------- Small pieces ---------- */
 const PATHS = {
+  repeat: '<path d="M4 9a7 7 0 0 1 12-3l3 3M19 4v5h-5M20 15a7 7 0 0 1-12 3l-3-3M5 20v-5h5"/>',
   back: '<path d="m15 5-7 7 7 7"/>', go: '<path d="m9 5 7 7-7 7"/>', up: '<path d="m5 15 7-7 7 7"/>', down: '<path d="m5 9 7 7 7-7"/>',
   word: '<path d="M4 4h8l8 8-8 8-8-8z"/><path d="M8.5 8.5h.01"/>', book: '<path d="M4 5c3-1 6-1 8 1 2-2 5-2 8-1v14c-3-1-6-1-8 1-2-2-5-2-8-1z"/><path d="M12 6v14"/>',
   list: '<path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/>', search: '<circle cx="11" cy="11" r="6"/><path d="m16 16 4 4"/>', rule: '<path d="M6 4h9l3 3v13H6z"/><path d="M9 11h6M9 15h6"/>',
@@ -172,9 +172,8 @@ function draw() {
   refit = null;
   const root = $('result');
   root.replaceChildren();
-  $('home').hidden = views.length > 0;
   root.hidden = !views.length;
-  showPatternButton();
+  drawTabs();
   keepBack();
   saveSession();
   if (!views.length) {
@@ -182,7 +181,7 @@ function draw() {
     return;
   }
   const v = views[views.length - 1];
-  ({ walk: showWalk, section: showSection, refs: showRefs, missing: showMissing, answer: showAnswer, patterns: showPatterns, rule: showItem, table: showItem, note: showItem, definition: showItem, page: showItem })[v.type](root, v);
+  ({ walk: showWalk, section: showSection, refs: showRefs, missing: showMissing, answer: showAnswer, patterns: showPatterns, drill: showDrill, addquiz: showAddQuiz, rule: showItem, table: showItem, note: showItem, definition: showItem, page: showItem })[v.type](root, v);
 }
 
 /* ---------- A question: one step at a time ---------- */
@@ -202,13 +201,27 @@ function stepsFor(f, v) {
         d.append(b);
       }
       body.append(d);
-      for (const b of f.bookWords) body.append(el('p', 'rs-grey', `"${b.word}": the book may say ${b.book.join(' or ')}.`));
       if (f.watch.length) {
         body.append(el('p', 'rs-grey', 'Do not skip these words'), chips(f.watch));
         if (f.negated.length) body.append(el('p', 'rs-grey', `The question rules out: ${f.negated.join(', ')}.`));
       }
     },
   }];
+  if (f.bookWords.length) {
+    steps.push({
+      ask: 'Does the book use another word?',
+      why: 'Look for the book\'s word when you search.',
+      fill(body) {
+        const card = el('div', 'card');
+        for (const b of f.bookWords) {
+          const line = el('div', 'rs-swap');
+          line.append(el('span', 'rs-chip dark', b.word), el('span', 'rs-grey', 'may be'), ...b.book.map((w) => el('span', 'rs-chip', w)));
+          card.append(line);
+        }
+        body.append(card);
+      },
+    });
+  }
   if (f.definitions.length) {
     steps.push({
       ask: 'Do you know every word?',
@@ -343,10 +356,13 @@ function showWalk(root, v) {
   if (st.final) {
     const hints = hintsFor(f).length;
     const words = !v.hints ? 'Give me a hint' : v.hints % hints === 0 ? 'First hint again' : 'Next hint';
-    foot.append(tapButton('btn soft', words, () => {
+    body.append(tapButton('btn soft', words, () => {
       v.hints = (v.hints || 0) + 1;
       draw();
     }));
+    const before = tapButton('btn soft', 'Back', goBack);
+    before.disabled = v.at === 0;
+    foot.append(before);
     const lock = tapButton('btn', 'Lock it in', () => askToLock(root, v));
     lock.id = 'lockIn';
     lock.disabled = !v.pick;
@@ -371,6 +387,7 @@ function showWalk(root, v) {
 
 /* ---------- The answer ---------- */
 function startAgain() {
+  tab = 'find';
   views = [];
   draw();
   $('q').value = '';
@@ -421,6 +438,62 @@ function listPlaceRow(p, box, body) {
   if (p.page) box.append(row(p.kind === 'definition' ? `Definition: ${p.id}` : pageWords(p.page), p.kind === 'definition' ? pageWords(p.page) : '', 'page', () => open({ type: 'page', page: p.page, name: p.kind === 'definition' ? p.id : pageWords(p.page), sub: 'Where to check' })));
 }
 
+// Not sure: help finishing the question by hand, and never a hint at an answer nobody has proven.
+function closestPlaceText(place) {
+  if (place.kind === 'table') return { name: `Table ${place.id}`, text: ready.tables.find((t) => t.label === place.id)?.text || '' };
+  return { name: `Rule ${place.id}`, text: ready.rules.get(place.id)?.text || '' };
+}
+function showNotSure(body, v) {
+  const f = v.found;
+  const unsettled = el('div', 'rs-tint');
+  unsettled.append(el('b', '', "What it couldn't settle"), document.createTextNode(v.result.because || 'The words alone could not decide it.'));
+  body.append(el('p', 'rs-grey', `You picked ${v.pick}`), el('h2', '', "The program isn't sure"));
+  if (!f.places.length) {
+    const none = el('div', 'rs-tint');
+    none.append(el('b', '', "What it couldn't settle"), document.createTextNode('The Index has no clear entry for these words. Try the Index under another word for the main thing being asked about, or ask your teacher.'));
+    body.append(none);
+    return;
+  }
+  const tabs = el('div', 'rs-tabs rs-bleed');
+  tabs.setAttribute('role', 'tablist');
+  const panel = el('div', 'rs-panel');
+  const fill = () => {
+    v.tab = v.tab || 'read';
+    for (const b of tabs.children) b.setAttribute('aria-selected', String(b.dataset.tab === v.tab));
+    panel.replaceChildren();
+    if (v.tab === 'read') {
+      const box = listBox(panel);
+      for (const p of f.places) placeRow(p.kind, p.id, box);
+      return;
+    }
+    const { name, text } = closestPlaceText(f.places[0]);
+    const out = ruledOutBy(f.options, text, name);
+    if (out.length) {
+      const card = el('div', 'card');
+      for (const c of out) {
+        const line = el('div', 'rs-way');
+        const words = el('div');
+        words.append(el('span', '', c.say));
+        line.append(el('i', '', c.letter), words);
+        card.append(line);
+      }
+      panel.append(card, el('p', 'rs-grey', 'This goes by the closest place only, so check it yourself.'));
+    } else panel.append(el('p', 'rs-grey', 'Nothing could be ruled out from the closest place.'));
+    panel.append(unsettled);
+  };
+  for (const [key, name] of [['read', 'Where to read'], ['out', 'Ruled out']]) {
+    const b = tapButton('rs-tab', name, () => {
+      v.tab = key;
+      fill();
+    });
+    b.dataset.tab = key;
+    b.setAttribute('role', 'tab');
+    tabs.append(b);
+  }
+  body.append(tabs, panel);
+  fill();
+}
+
 function showAnswer(root, v) {
   root.append(topBar('The answer'));
   const area = el('div', 'rs-body');
@@ -439,18 +512,14 @@ function showAnswer(root, v) {
     if (mine !== drawing) return;
     area.replaceChildren();
     // The route is kept on this device for the pattern book. It never holds the book's own words.
-    deviceStore().then((kv) => savePattern(kv, v.found.stem, patternOf(v.found, v.result))).then(() => { hasPatterns = true; }).catch(() => {});
+    deviceStore().then((kv) => savePattern(kv, v.found.stem, patternOf(v.found, v.result))).catch(() => {});
     if (v.result.status !== 'answer') {
       const body = scrollArea(area);
       if (v.result.outside) {
         body.append(el('p', 'rs-grey', `You picked ${v.pick}.`), el('h2', '', 'This is not in the Code'), el('p', 'rs-grey', v.result.because || 'The Code does not cover this. Ask your teacher where to look.'));
         return;
       }
-      body.append(el('p', 'rs-grey', `You picked ${v.pick}.`), el('h2', '', 'I have not checked this question yet'), el('p', 'rs-grey', 'I only show answers checked against the book, so I will not guess. These are the places to settle it.'));
-      if (v.found.places.length) {
-        const box = listBox(body);
-        for (const p of v.found.places) placeRow(p.kind, p.id, box);
-      }
+      showNotSure(body, v);
       return;
     }
     const r = v.result;
@@ -479,6 +548,8 @@ function showAnswer(root, v) {
           const text = el('div');
           text.append(el('b', '', w.head), el('span', '', w.say));
           line.append(el('i', '', String(i + 1)), text);
+          const worked = r.steps?.[i];
+          if (worked?.value != null) line.append(el('em', 'rs-val', `${worked.value}${worked.unit ? ` ${worked.unit}` : ''}`));
           card.append(line);
         });
         if (!why.length) card.append(el('p', 'rs-grey', r.because || 'See Where to check for the places to read.'));
@@ -502,7 +573,7 @@ function showAnswer(root, v) {
         }
       }
     };
-    for (const [key, name] of [['why', 'Why'], ['where', 'Where to check']]) {
+    for (const [key, name] of [['why', r.calculation ? 'Worked steps' : 'Why'], ['where', 'Where to check']]) {
       const b = tapButton('rs-tab', name, () => {
         v.tab = key;
         fill();
@@ -524,6 +595,281 @@ const placeWords = (p) => (p ? `${p.kind === 'table' ? 'Table' : p.kind === 'rul
 
 const ASK_WORDS = { type: 'which type', size: 'a size', rating: 'a rating', distance: 'a distance', number: 'a number', meaning: 'a meaning', other: 'something else' };
 
+function routeCard(p, hide) {
+  const card = el('div', `card${hide ? ' rs-hidden-steps' : ''}`);
+  [['What it asks', ASK_WORDS[p.asks] || p.asks], ['General or specific', SCOPE_WORDS[p.scope] || 'Not clear'], ['Index words', p.indexWords.join(', ') || 'None matched'], ['Where it ends', placeWords(p.place)]].forEach(([head, say], i) => {
+    const line = el('div', 'rs-way');
+    const text = el('div');
+    text.append(el('b', '', head), el('span', '', say));
+    line.append(el('i', '', String(i + 1)), text);
+    card.append(line);
+  });
+  return card;
+}
+
+/* ---------- The three tabs ---------- */
+const TABS = [['find', 'Find', 'search'], ['practice', 'Practice', 'repeat'], ['quizzes', 'Quizzes', 'list']];
+function drawTabs() {
+  const home = !views.length;
+  const open_ = !$('form').hidden;
+  $('home').hidden = !home || tab !== 'find';
+  $('practice').hidden = !home || tab !== 'practice';
+  $('quizzes').hidden = !home || tab !== 'quizzes';
+  const bar = $('tabbar');
+  bar.hidden = !home || !open_;
+  if (!bar.children.length) {
+    for (const [key, name, icon] of TABS) {
+      const b = tapButton('rs-tabbtn', undefined, () => {
+        tab = key;
+        draw();
+      });
+      b.dataset.tab = key;
+      b.setAttribute('role', 'tab');
+      b.append(ic(icon), el('span', '', name));
+      bar.append(b);
+    }
+  }
+  for (const b of bar.children) b.setAttribute('aria-selected', String(b.dataset.tab === tab));
+  if (!home) return;
+  if (tab === 'find') $('home').querySelector('.rs-homehead').append(document.querySelector('.rs-homeicons'));
+  if (tab === 'practice') drawPractice();
+  if (tab === 'quizzes') drawQuizzes();
+}
+function tabHead(root, title) {
+  const d = el('div', 'rs-homehead');
+  d.append(el('h1', '', title), document.querySelector('.rs-homeicons'));
+  root.replaceChildren(d);
+}
+let practiceDraw = 0;
+async function drawPractice() {
+  const root = $('practice');
+  const mine = ++practiceDraw;
+  tabHead(root, 'Practice');
+  let groups = [];
+  let missed = {};
+  try {
+    const kv = await deviceStore();
+    groups = groupPatterns(await loadPatterns(kv));
+    missed = (await kv.get(DRILL_MISSES)) || {};
+  } catch {
+    // Nothing saved can be read, so it shows as empty.
+  }
+  if (mine !== practiceDraw) return;
+  root.append(el('p', 'rs-grey', groups.length ? 'Routes from your own questions.' : 'Finish a question in Find, and its route shows up here.'));
+  if (!groups.length) return;
+  const box = listBox(root);
+  groups.forEach((g, i) => {
+    const p = g.pattern;
+    box.append(row(`Asks ${ASK_WORDS[p.asks] || p.asks}`, `${SCOPE_WORDS[p.scope] || 'Not clear'} · ${placeWords(p.place)}`, 'list', () => open({ type: 'patterns', pick: i })));
+  });
+  const deck = drillDeck(groups, missed).slice(0, DRILL_MOST);
+  if (deck.length) root.append(tapButton('btn', `Practise ${deck.length} route${deck.length === 1 ? '' : 's'}`, () => open(newDrill(deck))));
+}
+
+/* ---------- The pattern drill ---------- */
+const DRILL_MISSES = 'ce-drill-missed';
+const DRILL_MOST = 10;
+const newDrill = (deck) => ({ type: 'drill', deck, total: deck.length, had: 0, missed: [], shown: false });
+async function noteRoute(key, hadIt) {
+  const kv = await deviceStore();
+  await kv.set(DRILL_MISSES, noteDrill((await kv.get(DRILL_MISSES)) || {}, key, hadIt));
+}
+function showDrill(root, v) {
+  if (!v.deck.length) {
+    root.append(topBar('Pattern drill'));
+    const body = scrollArea(root);
+    const again = v.missed.length;
+    body.append(el('h2', '', 'Done for now'), el('p', 'rs-grey', `You had ${v.had} of ${v.total} route${v.total === 1 ? '' : 's'} from memory on the first try.${again ? ` ${again} came back and will show up first next time.` : ''}`));
+    const foot = el('div', 'rs-foot gut');
+    foot.append(tapButton('btn soft', 'Practise again', async () => {
+      const kv = await deviceStore();
+      const deck = drillDeck(groupPatterns(await loadPatterns(kv)), (await kv.get(DRILL_MISSES)) || {}).slice(0, DRILL_MOST);
+      views[views.length - 1] = newDrill(deck);
+      draw();
+    }), tapButton('btn', 'Back to Practice', goBack));
+    root.append(foot);
+    return;
+  }
+  const done = Math.min(v.total - 1, v.total - v.deck.length);
+  root.append(topBar('Pattern drill', `${done + 1} of ${v.total}`));
+  const body = scrollArea(root);
+  const c = v.deck[0];
+  const meter = el('div', 'rs-meter');
+  meter.setAttribute('role', 'img');
+  meter.setAttribute('aria-label', `${done} of ${v.total} done`);
+  const fill = el('i');
+  fill.style.width = `${(done / v.total) * 100}%`;
+  meter.append(fill);
+  body.append(meter, el('p', 'rs-drillq', c.question), routeCard(c.pattern, !v.shown));
+  if (!v.shown) body.append(el('p', 'rs-tint', 'Say each step to yourself, then tap Show route.'));
+  const foot = el('div', 'rs-foot gut');
+  if (!v.shown) {
+    foot.append(tapButton('btn', 'Show route', () => {
+      v.shown = true;
+      draw();
+    }));
+  } else {
+    const mark = (hadIt) => {
+      const first = !v.missed.includes(c.key);
+      v.deck.shift();
+      v.shown = false;
+      if (hadIt && first) v.had += 1;
+      if (!hadIt && first) {
+        v.missed.push(c.key);
+        v.deck.push(c); // It comes back once, later in this drill.
+      }
+      if (first) noteRoute(c.key, hadIt).catch(() => {});
+      draw();
+    };
+    foot.append(tapButton('btn soft', 'I missed it', () => mark(false)), tapButton('btn', 'I had it', () => mark(true)));
+  }
+  root.append(foot);
+}
+
+/* ---------- Graded quizzes ---------- */
+const SAVED_QUIZZES = 'ce-graded-quizzes';
+let quizzesDraw = 0;
+async function drawQuizzes() {
+  const root = $('quizzes');
+  const mine = ++quizzesDraw;
+  tabHead(root, 'Quizzes');
+  let saved = [];
+  try {
+    saved = (await (await deviceStore()).get(SAVED_QUIZZES)) || [];
+  } catch {
+    // Nothing saved can be read, so it shows as empty.
+  }
+  if (mine !== quizzesDraw) return;
+  root.append(el('p', 'rs-grey', 'Graded answers back the percents.'), gradedCounts(), tapButton('btn', 'Add a graded quiz', () => open({ type: 'addquiz', step: 1, text: '', items: [], allRight: false })));
+  if (saved.length) {
+    const box = listBox(root);
+    saved.forEach((text, i) => box.append(row(`Quiz ${i + 1} is saved on this phone`, 'Copy it again for Claude', 'list', () => open({ type: 'addquiz', step: 3, copy: text, saved: true }))));
+  }
+}
+function gradedCounts() {
+  const card = el('div', 'card rs-counts');
+  for (const level of ['high', 'medium', 'low']) {
+    const line = el('div', 'rs-count');
+    const words = el('div', 'rs-countline');
+    words.append(el('b', '', `${PERCENTS[level]}% answers`), el('span', 'rs-grey', `${GRADED[level]} of ${NEEDED}`));
+    const meter = el('div', 'rs-meter');
+    const fill = el('i');
+    fill.style.width = `${Math.min(100, (GRADED[level] / NEEDED) * 100)}%`;
+    meter.append(fill);
+    line.append(words, meter);
+    card.append(line);
+  }
+  return card;
+}
+function showAddQuiz(root, v) {
+  root.append(topBar('Add a graded quiz', `Step ${v.step} of 3`));
+  const body = scrollArea(root);
+  const foot = el('div', 'rs-foot gut');
+  if (v.step === 1) {
+    const box = document.createElement('textarea');
+    box.id = 'quizText';
+    box.value = v.text;
+    box.setAttribute('aria-label', 'Your quiz');
+    box.placeholder = 'Paste your quiz here';
+    const found = el('p', 'rs-grey', '');
+    const next = tapButton('btn', 'Next', () => {
+      v.items = splitQuiz(v.text);
+      v.step = 2;
+      draw();
+    });
+    const count = () => {
+      const n = splitQuiz(v.text).length;
+      found.textContent = v.text.trim() ? (n ? `Found ${n} question${n === 1 ? '' : 's'}.` : 'No questions found yet. Each one needs its choices.') : '';
+      next.disabled = !n;
+    };
+    box.oninput = () => {
+      v.text = box.value;
+      count();
+    };
+    count();
+    const card = el('div', 'card');
+    card.append(box);
+    body.append(el('h2', '', 'Paste your quiz'), el('p', 'rs-grey', 'Questions and choices, as they appear on the course site.'), card, found);
+    foot.append(next);
+  } else if (v.step === 2) {
+    body.append(el('h2', '', 'What was your grade?'));
+    const seg = el('div', 'rs-seg');
+    for (const [all, name] of [[true, 'I got 100%'], [false, 'I missed some']]) {
+      const b = tapButton('rs-segbtn', name, () => {
+        v.allRight = all;
+        draw();
+      });
+      b.setAttribute('aria-pressed', String(v.allRight === all));
+      seg.append(b);
+    }
+    body.append(seg, el('p', 'rs-grey', v.allRight ? 'Tap your pick on each question. They all count as right.' : 'Tap your pick on each question, and mark the ones you got wrong. Only answers you know are right count.'));
+    v.items.forEach((q, i) => {
+      const card = el('div', 'card rs-quizq');
+      card.append(el('p', '', `${i + 1}. ${q.stem}`));
+      const picks = el('div', 'rs-picks');
+      for (const o of q.options) {
+        const b = tapButton('rs-picktap', o.letter, () => {
+          q.pick = o.letter;
+          for (const other of picks.querySelectorAll('.rs-picktap')) other.setAttribute('aria-pressed', String(other === b));
+          saveSession();
+        });
+        b.setAttribute('aria-pressed', String(q.pick === o.letter));
+        b.setAttribute('aria-label', `Question ${i + 1}, you picked ${o.letter}`);
+        picks.append(b);
+      }
+      if (!v.allRight) {
+        const wrong = tapButton('rs-picktap rs-wrongtap', 'Wrong', () => {
+          q.wrong = !q.wrong;
+          wrong.setAttribute('aria-pressed', String(q.wrong));
+          saveSession();
+        });
+        wrong.setAttribute('aria-pressed', String(q.wrong));
+        picks.append(wrong);
+      }
+      card.append(picks);
+      body.append(card);
+    });
+    const save = async () => {
+      v.copy = quizForClaude(v.items, v.allRight);
+      v.step = 3;
+      try {
+        const kv = await deviceStore();
+        await kv.set(SAVED_QUIZZES, [...((await kv.get(SAVED_QUIZZES)) || []), v.copy]);
+        v.saved = true;
+      } catch {
+        v.saved = false;
+      }
+      draw();
+    };
+    foot.append(tapButton('btn soft', 'Back', () => {
+      v.step = 1;
+      draw();
+    }), tapButton('btn', 'Next', save));
+  } else {
+    body.append(el('h2', '', v.saved ? 'Saved on this phone' : 'Ready to copy'), el('p', 'rs-grey', 'Nothing has left your phone. Copy it and paste it into your Claude chat, and it joins your private question bank.'));
+    body.append(el('p', 'rs-small', 'Graded answers so far'), gradedCounts(), el('p', 'rs-tint', `The percents stay estimates until a rating reaches ${NEEDED}. These counts update after your quiz is added.`));
+    const spare = document.createElement('textarea');
+    spare.id = 'quizCopy';
+    spare.readOnly = true;
+    spare.hidden = true;
+    spare.value = v.copy || '';
+    spare.setAttribute('aria-label', 'Your quiz, to copy');
+    body.append(spare);
+    foot.append(tapButton('btn', 'Copy for Claude', async () => {
+      try {
+        await navigator.clipboard.writeText(v.copy);
+        toast('Copied. Paste it into your Claude chat.');
+      } catch {
+        // The phone refused, so the text is shown to copy by hand.
+        spare.hidden = false;
+        spare.select();
+        toast('Select all of this and copy it.');
+      }
+    }));
+  }
+  root.append(foot);
+}
+
 function showPatterns(root, v) {
   root.append(topBar('Pattern book'));
   const area = el('div', 'rs-body');
@@ -539,14 +885,7 @@ function showPatterns(root, v) {
       const asks = ASK_WORDS[p.asks] || p.asks;
       body.append(el('h2', '', `Asks ${asks}`));
       body.append(el('p', 'rs-small', 'The route'));
-      const card = el('div', `card${v.retrace ? ' rs-hidden-steps' : ''}`);
-      [['What it asks', asks], ['General or specific', SCOPE_WORDS[p.scope] || 'Not clear'], ['Index words', p.indexWords.join(', ') || 'None matched'], ['Where it ends', placeWords(p.place)]].forEach(([head, say], i) => {
-        const line = el('div', 'rs-way');
-        const text = el('div');
-        text.append(el('b', '', head), el('span', '', say));
-        line.append(el('i', '', String(i + 1)), text);
-        card.append(line);
-      });
+      const card = routeCard(p, v.retrace);
       body.append(card);
       if (v.retrace) body.append(el('p', 'rs-tint', 'Say each step to yourself, then tap Show steps.'));
       if (!p.clear && p.why) body.append(el('p', 'rs-grey', p.why));
@@ -883,6 +1222,13 @@ function showItem(root, v) {
   sheet.append(head, more);
   if (walk?.found?.options.length >= 2) {
     const ready = el('div', 'rs-ready gut');
+    if (walk.at + 1 < stepsFor(walk.found, walk).length - 1) {
+      ready.append(tapButton('btn soft', 'Next step', () => {
+        views.length = views.indexOf(walk) + 1;
+        walk.at += 1;
+        draw();
+      }));
+    }
     ready.append(tapButton('btn', "I'm ready to choose", () => {
       views.length = views.indexOf(walk) + 1;
       walk.at = Number.MAX_SAFE_INTEGER;
@@ -982,12 +1328,6 @@ function searchFor(text) {
   return { type: 'walk', text, dropped: [], at: 0 };
 }
 
-function showPatternButton() {
-  const b = $('patterns');
-  if (b) b.hidden = !hasPatterns || $('form').hidden;
-}
-$('patterns').onclick = () => open({ type: 'patterns' });
-
 $('form').onsubmit = (e) => {
   e.preventDefault();
   if (!index) return;
@@ -1066,7 +1406,7 @@ document.addEventListener('click', (e) => {
 // An extra history entry catches the phone's Back button, so Back moves through the app instead of leaving it.
 // Back at the start with nothing to catch leaves the app on the first press, so a leftover entry is taken away.
 function keepBack() {
-  const need = views.length > 0 || locked;
+  const need = views.length > 0 || locked || tab !== 'find';
   if (need && !guarded) {
     history.pushState({ ceBack: true }, '');
     guarded = true;
@@ -1084,7 +1424,10 @@ addEventListener('popstate', () => {
     return;
   }
   if (views.length) goBack();
-  else if (locked) toast('Locked. Tap the lock to leave.');
+  else if (tab !== 'find') {
+    tab = 'find';
+    draw();
+  } else if (locked) toast('Locked. Tap the lock to leave.');
   keepBack();
 });
 
@@ -1295,7 +1638,7 @@ const TYPED = 'ce-typed';
 
 // Moves to a saved new version, never in the middle of a question or over a password you are typing.
 function applyUpdate() {
-  if (!updateReady || document.hidden || views.length) return;
+  if (!updateReady || document.hidden || views.length || tab !== 'find') return;
   if (document.querySelector('input[type=password]')?.value) return;
   updateReady = false;
   // What is in the question box comes back after the move.

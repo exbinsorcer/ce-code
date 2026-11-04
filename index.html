@@ -8,7 +8,7 @@
 <meta name="ce-book" content="carried">
 <link rel="icon" href="icons/icon-192.png">
 <link rel="manifest" href="manifest.webmanifest">
-<link rel="stylesheet" href="styles.css?v=5bb51be2">
+<link rel="stylesheet" href="styles.css?v=a8290e52">
 <script>
 // Set before the page paints, so night mode never flashes white.
 (function () {
@@ -34,17 +34,19 @@
     <form class="rs-ask" id="form" autocomplete="off" hidden>
       <div class="card"><textarea id="q" placeholder="Paste a question, or type 2-328, 32 or Table 65" aria-label="Question, rule, section or table" disabled></textarea></div>
       <button class="btn" id="go" disabled>Find</button>
-      <button class="btn soft" id="patterns" type="button" hidden>Pattern book</button>
     </form>
     <p class="rs-grey" id="say" role="status" aria-live="polite"></p>
     <label class="btn soft" id="pick" hidden>Choose your Code PDF<input type="file" id="file" accept="application/pdf,.pdf" hidden></label>
     <button class="btn soft" id="retry" type="button" hidden>Try again</button>
     <div class="rs-push"></div>
     <button class="link" id="lockNow" type="button" hidden>Lock my book now</button>
-    <p class="note">Build 5bb51be2</p>
+    <p class="note">Build a8290e52</p>
   </main>
+  <section class="rs-scroll gut rs-tabpage" id="practice" hidden></section>
+  <section class="rs-scroll gut rs-tabpage" id="quizzes" hidden></section>
   <section class="rs-view" id="result" hidden></section>
+  <nav class="rs-tabbar" id="tabbar" role="tablist" aria-label="Sections" hidden></nav>
 </div>
-<script type="module" src="rules-ui.js?v=5bb51be2"></script>
+<script type="module" src="rules-ui.js?v=a8290e52"></script>
 </body>
 </html>
