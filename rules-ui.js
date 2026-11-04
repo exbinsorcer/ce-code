@@ -1,12 +1,12 @@
 // The search page. The book is read on this device each time the page opens. No AI.
-import * as store from './store.js?v=03c292cd';
-import * as viewer from './viewer.js?v=03c292cd';
-import { createIndexer, lookup, readPage, rulePreview, parseSectionNumber, lookupSection, searchSection } from './rules.js?v=03c292cd';
-import { createBookMap, lookupTable, parseTableNumber, rulesNamedIn, tablesNamedIn, watchWordsIn } from './map.js?v=03c292cd';
-import { prepareFinder, findInBook } from './finder.js?v=03c292cd';
-import { TOTAL_PAGES } from './logic.js?v=03c292cd';
-import { isLockedBook, unlockBook } from './crypt.js?v=03c292cd';
-import { packBook, unpackBook } from './snapshot.js?v=03c292cd';
+import * as store from './store.js?v=026f7ebb';
+import * as viewer from './viewer.js?v=026f7ebb';
+import { createIndexer, lookup, readPage, rulePreview, parseSectionNumber, lookupSection, searchSection } from './rules.js?v=026f7ebb';
+import { createBookMap, lookupTable, parseTableNumber, rulesNamedIn, tablesNamedIn, watchWordsIn } from './map.js?v=026f7ebb';
+import { prepareFinder, findInBook } from './finder.js?v=026f7ebb';
+import { TOTAL_PAGES } from './logic.js?v=026f7ebb';
+import { isLockedBook, unlockBook } from './crypt.js?v=026f7ebb';
+import { packBook, unpackBook } from './snapshot.js?v=026f7ebb';
 
 const $ = (id) => document.getElementById(id);
 let index = null;
@@ -652,7 +652,6 @@ $('file').onchange = async () => {
       kept = false;
     }
     await readBook(blob, null, kept);
-    $('changeBook').hidden = !kept;
     if (!kept) say('There is no room to keep your book here. It is open for now, and you will need to choose it again next time.');
   } catch {
     try {
@@ -663,30 +662,6 @@ $('file').onchange = async () => {
     say('That PDF could not be opened. Choose your Code PDF.');
     $('pick').hidden = false;
   }
-};
-
-// Closes the book and forgets it on this device, so a different file can be chosen. Your own file is not touched.
-$('changeBook').onclick = async () => {
-  views = [];
-  draw();
-  index = null;
-  map = null;
-  ready = null;
-  $('q').value = '';
-  $('q').disabled = true;
-  $('go').disabled = true;
-  $('form').hidden = true;
-  $('changeBook').hidden = true;
-  await viewer.closeBook();
-  try {
-    await store.kvDel('book');
-    await store.kvDel('bookMap');
-  } catch {
-    // Nothing was kept.
-  }
-  $('file').value = '';
-  say('Choose your Code PDF. You only do this once.');
-  $('pick').hidden = false;
 };
 
 async function fetchBytes(name) {
@@ -736,7 +711,6 @@ function askPassword(locked, here) {
     }
     try {
       await readBook(blob, null, here);
-      $('changeBook').hidden = !here;
     } catch {
       say('Your book could not be opened.');
     }
@@ -811,7 +785,6 @@ async function start() {
         // The pages are read instead.
       }
       await readBook(saved.blob, savedMap, true);
-      $('changeBook').hidden = false;
       return undefined;
     } catch {
       say('Your saved PDF could not be opened. Choose it again.');
