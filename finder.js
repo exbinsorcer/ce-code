@@ -1,9 +1,9 @@
 // Turns a question into where to look in the book, following the steps taught in class:
 // key words, definitions, contents, index, rule titles, then any table, note or rule the rule points to.
 // It never decides the answer. It uses the question only, not the answer choices, so it cannot give one away.
-import { parseQuestion } from './engine.js?v=84d3cbd7';
-import { wordsOf, compareRules, lookup } from './rules.js?v=84d3cbd7';
-import { tablesNamedIn } from './map.js?v=84d3cbd7';
+import { parseQuestion } from './engine.js?v=c67fefb1';
+import { wordsOf, compareRules, lookup } from './rules.js?v=c67fefb1';
+import { tablesNamedIn } from './map.js?v=c67fefb1';
 
 const STOP = new Set(`a about above after all also an and any are as at be been being below between both but by can could do does during each every
 for from had has have how i if in into is it its of on onto or our per should so some such than that the their them then there these they this
@@ -41,7 +41,8 @@ const STOP_WORDS = new Set(lightWords([...STOP].join(' ')));
 const ASKING_WORDS = new Set(['definition', 'definitions', 'define', 'defined', 'meaning']);
 // The general sections, by their numbers in the Contents. Every other section adds to or changes these.
 // tools/check_sections.mjs checks this list against the book's own wording.
-export const GENERAL_SECTIONS = new Set([2, 4, 6, 8, 10, 12, 14, 16, 26]);
+// Section 0 counts as general too, though it is only offered through the definitions step.
+export const GENERAL_SECTIONS = new Set([0, 2, 4, 6, 8, 10, 12, 14, 16, 26]);
 
 const DEFINE = /(?:definition\s+(?:of|for)|define|meaning\s+of|what\s+does|what\s+is\s+meant\s+by|what\s+is\s+an?|what\s+are)\s+(?:the\s+|an?\s+)?["'“]?([\p{L}\p{N} ,-]+?)["'”]?(?:\s+mean)?\s*\??$/iu;
 const LOOKS_LIKE_TABLE = /\b(what\s+size|how\s+big|minimum\s+size|maximum\s+number|how\s+many|ampacity|ampacities|correction\s+factors?|spacing|gauge|awg|rating\s+of|largest|smallest|type\s+of\s+\w*\s*enclosure|enclosure\s+type)\b/i;

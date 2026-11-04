@@ -1,6 +1,6 @@
 // A map of the book's own signposts: contents, table list, tables, definitions, Appendix B notes and the index.
 // It is built from the PDF on the device each time the book opens, held in memory, and never saved.
-import { startsBold, wordsOf, compareRules } from './rules.js?v=84d3cbd7';
+import { startsBold, wordsOf, compareRules } from './rules.js?v=c67fefb1';
 
 const MARKS = /^[\sΔ∆▲△●○■□◆◇*†‡§•]+/u;
 const RULE = /(?<![\p{L}\p{N}-])(\d{1,2})\s?[-‐‑–]\s?(\d{3,4})(?![\p{N}-])/gu;

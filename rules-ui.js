@@ -1,13 +1,13 @@
 // The search page. The book is read on this device each time the page opens. No AI.
-import * as store from './store.js?v=84d3cbd7';
-import * as viewer from './viewer.js?v=84d3cbd7';
-import { createIndexer, lookup, readPage, rulePreview, parseSectionNumber, lookupSection, searchSection } from './rules.js?v=84d3cbd7';
-import { createBookMap, lookupTable, parseTableNumber, rulesNamedIn, tablesNamedIn, watchWordsIn } from './map.js?v=84d3cbd7';
-import { prepareFinder, findInBook, hintsFor, markRanges } from './finder.js?v=84d3cbd7';
-import { checkQuestion } from './checker.js?v=84d3cbd7';
-import { TOTAL_PAGES } from './logic.js?v=84d3cbd7';
-import { isLockedBook, unlockBook } from './crypt.js?v=84d3cbd7';
-import { packBook, unpackBook } from './snapshot.js?v=84d3cbd7';
+import * as store from './store.js?v=c67fefb1';
+import * as viewer from './viewer.js?v=c67fefb1';
+import { createIndexer, lookup, readPage, rulePreview, parseSectionNumber, lookupSection, searchSection } from './rules.js?v=c67fefb1';
+import { createBookMap, lookupTable, parseTableNumber, rulesNamedIn, tablesNamedIn, watchWordsIn } from './map.js?v=c67fefb1';
+import { prepareFinder, findInBook, hintsFor, markRanges } from './finder.js?v=c67fefb1';
+import { checkQuestion } from './checker.js?v=c67fefb1';
+import { TOTAL_PAGES } from './logic.js?v=c67fefb1';
+import { isLockedBook, unlockBook } from './crypt.js?v=c67fefb1';
+import { packBook, unpackBook } from './snapshot.js?v=c67fefb1';
 
 const $ = (id) => document.getElementById(id);
 let index = null;
@@ -194,25 +194,13 @@ function stepsFor(f, v) {
       },
     });
   }
-  if (map.guides['C9.8'] || map.guides.C11) {
-    steps.push({
-      ask: 'Do you know how the Code uses words?',
-      why: 'Check these two parts if not.',
-      fill(body) {
-        const box = listBox(body);
-        for (const [key, name] of [['C9.8', 'Appendix C, C9.8'], ['C11', 'Appendix C, C11']]) {
-          if (map.guides[key]) box.append(row(name, pageWords(map.guides[key]), 'book', () => open({ type: 'page', page: map.guides[key], name })));
-        }
-      },
-    });
-  }
   const sectionRows = (body, list) => {
     const box = listBox(body);
     for (const s of list) box.append(row(`Section ${s.section}: ${s.title}`, s.page ? pageWords(s.page) : '', 'list', () => open({ type: 'section', section: s.section })));
   };
   steps.push({
     ask: 'General or specific?',
-    why: 'Sections 2 to 16 and 26 are general. The rest only add to or change them, so if one fits your question, read it first.',
+    why: 'Sections 0 to 16 and 26 are general. The rest only add to or change them, so if one fits your question, read it first.',
     fill(body) {
       const { specific, general } = f.scope;
       body.append(el('p', 'rs-small', 'Specific sections'));

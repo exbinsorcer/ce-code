@@ -1,8 +1,8 @@
 // Tests each answer choice against the book. Plain code, no AI.
 // It names a choice only when exactly one has the book behind it. Anything else is "not sure", because a wrong answer is far worse.
-import { findInBook } from './finder.js?v=84d3cbd7';
-import { wordsOf } from './rules.js?v=84d3cbd7';
-import { readTable as readBookTable } from './tables.js?v=84d3cbd7';
+import { findInBook } from './finder.js?v=c67fefb1';
+import { wordsOf } from './rules.js?v=c67fefb1';
+import { readTable as readBookTable } from './tables.js?v=c67fefb1';
 
 const JOINING = new Set(['and', 'or', 'of', 'the', 'a', 'an', 'in', 'on', 'to', 'for', 'with', 'use', 'used']);
 const meaningful = (text) => wordsOf(text).filter((w) => !JOINING.has(w));
