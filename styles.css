@@ -171,9 +171,8 @@ mark{background:var(--soft);color:var(--ink);font-weight:600}
 .rs-view .rs-pop h2{font-size:20px;line-height:24px}
 .rs-pop .rs-foot{padding-inline:0}
 .rs-result{flex:none;display:flex;align-items:center;gap:12px;padding-block:14px}
-.rs-mark{flex:none;width:48px;height:48px;border-radius:50%;background:var(--soft);display:grid;place-items:center}
-.rs-mark svg{width:28px;height:28px;fill:none;stroke:var(--ink);stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
-.rs-result.off .rs-mark svg{stroke:var(--bad)}
+.rs-ring{flex:none;width:72px;height:72px;border-radius:50%;display:grid;place-items:center;background:conic-gradient(var(--ink) calc(var(--p)*1%),var(--soft) 0)}
+.rs-ring b{width:60px;height:60px;border-radius:50%;background:var(--page);display:grid;place-items:center;font-size:20px;line-height:24px;font-weight:700;font-variant-numeric:tabular-nums}
 .rs-draw{stroke-dasharray:30;animation:rs-draw 1s ease both}
 @keyframes rs-draw{from{stroke-dashoffset:30}to{stroke-dashoffset:0}}
 .rs-words{min-width:0;animation:in 1.6s ease both}
@@ -200,15 +199,10 @@ mark{background:var(--soft);color:var(--ink);font-weight:600}
  #home h1{font-size:22px;line-height:28px}
 }
 /* The confidence rating on the answer screen. Three bars and one line. Not a button. */
-.rs-rate{flex:none;display:flex;align-items:flex-start;gap:12px;padding-block:2px 14px}
-.rs-bars{flex:none;display:flex;align-items:flex-end;gap:3px;height:22px}
-.rs-bars i{width:7px;border-radius:2px;background:var(--line)}
-.rs-bars i:nth-child(1){height:9px}.rs-bars i:nth-child(2){height:15px}.rs-bars i:nth-child(3){height:22px}
-.rs-bars i.on{background:var(--ink)}
+.rs-rate{flex:none;padding-block:0 14px}
+.rs-rate b{display:block;font-size:14px;line-height:20px;font-weight:600}
+.rs-rate small{display:block;font-size:14px;line-height:20px;color:var(--grey);overflow-wrap:anywhere}
 .rs-saved-q{margin:0;padding:10px 12px;font-size:14px;line-height:20px;overflow-wrap:anywhere}
 .rs-saved-q+.rs-saved-q{border-top:1px solid var(--line)}
 .rs-hidden-steps .rs-way b,.rs-hidden-steps .rs-way span{filter:blur(6px);user-select:none}
-.rs-rt{min-width:0}
-.rs-rt b{display:block;font-size:14px;line-height:20px;font-weight:600}
-.rs-rt small{display:block;font-size:14px;line-height:20px;color:var(--grey);overflow-wrap:anywhere}
 #patterns{width:100%;margin-top:8px}

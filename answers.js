@@ -98,6 +98,18 @@ export function combineAnswers(checked, listed) {
 }
 
 // The line shown under a rating. A low rating always says to ask the teacher.
+// How sure the program is, as a percent. It is an estimate set by the kind of evidence, not measured odds.
+const PERCENTS = { high: 95, medium: 75, low: 50 };
+export function percentOf(result) {
+  return PERCENTS[result?.confidence] ?? PERCENTS.medium;
+}
+
+// What you picked beside what the program picks. It never calls your pick right or wrong.
+export function pickWords(pick, result) {
+  const verb = result?.confidence === 'low' ? 'leans to' : 'picks';
+  return { picked: `You picked ${pick}`, program: `The program ${verb} ${result.choice}${pick === result.choice ? ' too' : ''}` };
+}
+
 export function ratingLine(result) {
   const because = String(result?.because || '').trim();
   if (result?.confidence !== 'low' || /teacher/i.test(because)) return because;

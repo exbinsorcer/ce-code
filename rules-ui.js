@@ -1,15 +1,15 @@
 // The search page. The book is read on this device each time the page opens. No AI.
-import * as store from './store.js?v=005809e6';
-import * as viewer from './viewer.js?v=005809e6';
-import { createIndexer, lookup, readPage, rulePreview, parseSectionNumber, lookupSection, searchSection } from './rules.js?v=005809e6';
-import { createBookMap, lookupTable, parseTableNumber, rulesNamedIn, tablesNamedIn, watchWordsIn } from './map.js?v=005809e6';
-import { prepareFinder, findInBook, hintsFor, markRanges } from './finder.js?v=005809e6';
-import { checkQuestion } from './checker.js?v=005809e6';
-import { openAnswers, matchAnswer, combineAnswers, ratingLine } from './answers.js?v=005809e6';
-import { patternOf, savePattern, loadPatterns, groupPatterns, deviceStore } from './patterns.js?v=005809e6';
-import { TOTAL_PAGES } from './logic.js?v=005809e6';
-import { isLockedBook, unlockBook } from './crypt.js?v=005809e6';
-import { packBook, unpackBook } from './snapshot.js?v=005809e6';
+import * as store from './store.js?v=5c98d27e';
+import * as viewer from './viewer.js?v=5c98d27e';
+import { createIndexer, lookup, readPage, rulePreview, parseSectionNumber, lookupSection, searchSection } from './rules.js?v=5c98d27e';
+import { createBookMap, lookupTable, parseTableNumber, rulesNamedIn, tablesNamedIn, watchWordsIn } from './map.js?v=5c98d27e';
+import { prepareFinder, findInBook, hintsFor, markRanges } from './finder.js?v=5c98d27e';
+import { checkQuestion } from './checker.js?v=5c98d27e';
+import { openAnswers, matchAnswer, combineAnswers, ratingLine, percentOf, pickWords } from './answers.js?v=5c98d27e';
+import { patternOf, savePattern, loadPatterns, groupPatterns, deviceStore } from './patterns.js?v=5c98d27e';
+import { TOTAL_PAGES } from './logic.js?v=5c98d27e';
+import { isLockedBook, unlockBook } from './crypt.js?v=5c98d27e';
+import { packBook, unpackBook } from './snapshot.js?v=5c98d27e';
 
 const $ = (id) => document.getElementById(id);
 let index = null;
@@ -18,6 +18,7 @@ let ready = null;
 let lockedBytes = null; // The scrambled book, kept so the page can lock itself again.
 let lockedHere = false; // True when the locked book was made on this device.
 let views = []; // Where you have been, so Back works from any screen.
+let updateReady = false; // A new version is saved, and the page moves to it when you are not in the middle of something.
 let locked = false; // Locked: Back cannot leave the app, and full screen comes back when you tap.
 let hasPatterns = false; // True once a route is saved for the pattern book.
 let guarded = false; // True while an extra history entry is there to catch the phone's Back button.
@@ -172,7 +173,10 @@ function draw() {
   showPatternButton();
   keepBack();
   saveSession();
-  if (!views.length) return;
+  if (!views.length) {
+    applyUpdate();
+    return;
+  }
   const v = views[views.length - 1];
   ({ walk: showWalk, section: showSection, refs: showRefs, missing: showMissing, answer: showAnswer, patterns: showPatterns, rule: showItem, table: showItem, note: showItem, definition: showItem, page: showItem })[v.type](root, v);
 }
@@ -397,20 +401,12 @@ async function answerListHere() {
   return answerList;
 }
 
-const LEVELS = { high: ['High confidence', 3], medium: ['Medium confidence', 2], low: ['Low confidence', 1] };
-
-// Three bars, the level in words, and one plain line saying why. Shown only after Lock it in, and never tappable.
+// The percent in words and one plain line saying why. Shown only after Lock it in, and never tappable.
 function ratingBox(r) {
-  const [name, filled] = LEVELS[r.confidence] || LEVELS.medium;
-  const box = el('div', `rs-rate gut lv-${r.confidence || 'medium'}`);
-  const bars = el('span', 'rs-bars');
-  bars.setAttribute('aria-hidden', 'true');
-  for (let i = 1; i <= 3; i++) bars.append(el('i', i <= filled ? 'on' : ''));
-  const words = el('span', 'rs-rt');
-  words.append(el('b', '', name));
+  const box = el('div', 'rs-rate gut');
+  box.append(el('b', '', `${percentOf(r)}% sure`));
   const line = ratingLine(r);
-  if (line) words.append(el('small', '', line));
-  box.append(bars, words);
+  if (line) box.append(el('small', '', line));
   return box;
 }
 
@@ -454,14 +450,16 @@ function showAnswer(root, v) {
       return;
     }
     const r = v.result;
-    const right = r.choice === v.pick;
     const answer = v.found.options.find((o) => o.letter === r.choice);
-    const top = el('div', `rs-result gut${right ? '' : ' off'}`);
-    const mark = el('span', 'rs-mark');
-    mark.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path class="rs-draw" d="${right ? 'M5 13l5 5 9-11' : 'M6 6l12 12M18 6 6 18'}"/></svg>`;
+    const top = el('div', 'rs-result gut');
+    const percent = percentOf(r);
+    const ring = el('span', 'rs-ring');
+    ring.style.setProperty('--p', String(percent));
+    ring.append(el('b', '', `${percent}%`));
+    const said = pickWords(v.pick, r);
     const words = el('span', 'rs-words');
-    words.append(el('b', '', right ? `You picked ${v.pick}. That's right.` : `You picked ${v.pick}. The answer is ${r.choice}.`), el('small', '', answer ? `${answer.letter}) ${answer.text}` : ''));
-    top.append(mark, words);
+    words.append(el('small', '', said.picked), el('b', '', said.program), el('small', '', answer ? `${answer.letter}) ${answer.text}` : ''));
+    top.append(ring, words);
     const tabs = el('div', 'rs-tabs');
     tabs.setAttribute('role', 'tablist');
     const panel = el('div', 'rs-scroll gut');
@@ -1278,8 +1276,49 @@ $('lockNow').onclick = async () => {
 
 $('retry').onclick = () => location.reload();
 
+const TYPED = 'ce-typed';
+
+// Moves to a saved new version, never in the middle of a question or over a password you are typing.
+function applyUpdate() {
+  if (!updateReady || document.hidden || views.length) return;
+  if (document.querySelector('input[type=password]')?.value) return;
+  updateReady = false;
+  // What is in the question box comes back after the move.
+  try {
+    sessionStorage.setItem(TYPED, $('q').value);
+  } catch {
+    // It is not kept this time.
+  }
+  location.reload();
+}
+
+function watchForUpdates() {
+  // The first version on a device takes over with nothing to replace, so that is not an update.
+  const hadOne = Boolean(navigator.serviceWorker.controller);
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadOne) return;
+    updateReady = true;
+    applyUpdate();
+  });
+  navigator.serviceWorker.register('sw.js').then((reg) => {
+    // A tab left open looks for a new version each time you come back to it.
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) return;
+      applyUpdate();
+      reg.update().catch(() => {});
+    });
+  }).catch(() => {});
+}
+
 async function start() {
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+  try {
+    const typed = sessionStorage.getItem(TYPED);
+    if (typed) $('q').value = typed;
+    sessionStorage.removeItem(TYPED);
+  } catch {
+    // Nothing was kept.
+  }
+  if ('serviceWorker' in navigator) watchForUpdates();
   // In the Android app and on your own PC the book is already here, so nothing needs choosing.
   say('Opening your book');
   const builtIn = await fetchBytes('book.pdf');

@@ -4,7 +4,7 @@
 // It splits a rule into subrules and items, finds the one part that holds the question's key words, and tests each
 // choice against that part. It names a choice only when exactly one choice is written there and the others are not.
 // The kind of question turned on so far: choices that are a number with a unit, like "1.5 m", "300 mm", "3%" or "15 A".
-import { wordsOf as bookWords, lookup } from './rules.js?v=005809e6';
+import { wordsOf as bookWords, lookup } from './rules.js?v=5c98d27e';
 
 const notSure = (why) => ({ status: 'not-sure', choice: null, evidence: [], why: [why], mistake: null });
 const wordsOf = (text) => bookWords(text).map((w) => (w.length > 4 && w.endsWith('ie') ? `${w.slice(0, -2)}y` : w));
