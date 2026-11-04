@@ -1,13 +1,15 @@
 // The search page. The book is read on this device each time the page opens. No AI.
-import * as store from './store.js?v=c67fefb1';
-import * as viewer from './viewer.js?v=c67fefb1';
-import { createIndexer, lookup, readPage, rulePreview, parseSectionNumber, lookupSection, searchSection } from './rules.js?v=c67fefb1';
-import { createBookMap, lookupTable, parseTableNumber, rulesNamedIn, tablesNamedIn, watchWordsIn } from './map.js?v=c67fefb1';
-import { prepareFinder, findInBook, hintsFor, markRanges } from './finder.js?v=c67fefb1';
-import { checkQuestion } from './checker.js?v=c67fefb1';
-import { TOTAL_PAGES } from './logic.js?v=c67fefb1';
-import { isLockedBook, unlockBook } from './crypt.js?v=c67fefb1';
-import { packBook, unpackBook } from './snapshot.js?v=c67fefb1';
+import * as store from './store.js?v=005809e6';
+import * as viewer from './viewer.js?v=005809e6';
+import { createIndexer, lookup, readPage, rulePreview, parseSectionNumber, lookupSection, searchSection } from './rules.js?v=005809e6';
+import { createBookMap, lookupTable, parseTableNumber, rulesNamedIn, tablesNamedIn, watchWordsIn } from './map.js?v=005809e6';
+import { prepareFinder, findInBook, hintsFor, markRanges } from './finder.js?v=005809e6';
+import { checkQuestion } from './checker.js?v=005809e6';
+import { openAnswers, matchAnswer, combineAnswers, ratingLine } from './answers.js?v=005809e6';
+import { patternOf, savePattern, loadPatterns, groupPatterns, deviceStore } from './patterns.js?v=005809e6';
+import { TOTAL_PAGES } from './logic.js?v=005809e6';
+import { isLockedBook, unlockBook } from './crypt.js?v=005809e6';
+import { packBook, unpackBook } from './snapshot.js?v=005809e6';
 
 const $ = (id) => document.getElementById(id);
 let index = null;
@@ -16,6 +18,9 @@ let ready = null;
 let lockedBytes = null; // The scrambled book, kept so the page can lock itself again.
 let lockedHere = false; // True when the locked book was made on this device.
 let views = []; // Where you have been, so Back works from any screen.
+let locked = false; // Locked: Back cannot leave the app, and full screen comes back when you tap.
+let hasPatterns = false; // True once a route is saved for the pattern book.
+let guarded = false; // True while an extra history entry is there to catch the phone's Back button.
 
 const say = (t) => {
   $('say').textContent = t;
@@ -57,7 +62,13 @@ async function readBook(blob, savedMap = null, remember = false) {
   $('lockNow').hidden = !lockedBytes;
   $('q').disabled = false;
   $('go').disabled = false;
-  $('q').focus();
+  // The Pattern book button shows once at least one route is saved on this device.
+  deviceStore().then(loadPatterns).then((list) => {
+    hasPatterns = list.length > 0;
+    showPatternButton();
+  }).catch(() => {});
+  resumeSession();
+  if (!views.length) $('q').focus();
 }
 
 /* ---------- Small pieces ---------- */
@@ -68,6 +79,8 @@ const PATHS = {
   table: '<path d="M4 5h16v14H4zM4 10h16M4 15h16M10 5v14"/>', note: '<path d="M5 4h14v12l-4 4H5z"/><path d="M15 20v-4h4M8 9h8M8 13h5"/>', page: '<path d="M6 3h9l4 4v14H6z"/><path d="M15 3v4h4"/>',
   moon: '<path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z"/>', sun: '<circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6 7 7M17 17l1.4 1.4M5.6 18.4 7 17M17 7l1.4-1.4"/>',
   zoom: '<circle cx="11" cy="11" r="6"/><path d="m16 16 4 4M11 8.5v5M8.5 11h5"/>',
+  expand: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>', shrink: '<path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/>',
+  lock: '<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>', unlock: '<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 7.5-2"/>',
   plus: '<path d="M12 5v14M5 12h14"/>', minus: '<path d="M5 12h14"/>', left: '<path d="M19 12H5M11 6l-6 6 6 6"/>', right: '<path d="M5 12h14M13 6l6 6-6 6"/>',
 };
 function ic(name) {
@@ -129,6 +142,7 @@ function topBar(title, right) {
   back.append(ic('back'));
   d.append(back, el('b', '', title));
   if (right) d.append(el('span', '', right));
+  d.append(stayButton());
   return d;
 }
 const scrollArea = (root) => {
@@ -155,9 +169,12 @@ function draw() {
   root.replaceChildren();
   $('home').hidden = views.length > 0;
   root.hidden = !views.length;
+  showPatternButton();
+  keepBack();
+  saveSession();
   if (!views.length) return;
   const v = views[views.length - 1];
-  ({ walk: showWalk, section: showSection, refs: showRefs, missing: showMissing, answer: showAnswer, rule: showItem, table: showItem, note: showItem, definition: showItem, page: showItem })[v.type](root, v);
+  ({ walk: showWalk, section: showSection, refs: showRefs, missing: showMissing, answer: showAnswer, patterns: showPatterns, rule: showItem, table: showItem, note: showItem, definition: showItem, page: showItem })[v.type](root, v);
 }
 
 /* ---------- A question: one step at a time ---------- */
@@ -362,6 +379,48 @@ const placeRow = (kind, id, box) => {
   }
 };
 
+// The answer list researched by hand, opened with the book on this device. Missing pieces mean no list, never an error.
+let answerList;
+async function answerListHere() {
+  if (answerList !== undefined) return answerList;
+  answerList = null;
+  try {
+    const saved = await store.kvGet('book');
+    const blob = saved?.blob;
+    if (!blob) return answerList;
+    const res = await fetch('answers.enc');
+    if (!res.ok) return answerList;
+    answerList = await openAnswers(new Uint8Array(await res.arrayBuffer()), new Uint8Array(await blob.arrayBuffer()));
+  } catch {
+    answerList = null;
+  }
+  return answerList;
+}
+
+const LEVELS = { high: ['High confidence', 3], medium: ['Medium confidence', 2], low: ['Low confidence', 1] };
+
+// Three bars, the level in words, and one plain line saying why. Shown only after Lock it in, and never tappable.
+function ratingBox(r) {
+  const [name, filled] = LEVELS[r.confidence] || LEVELS.medium;
+  const box = el('div', `rs-rate gut lv-${r.confidence || 'medium'}`);
+  const bars = el('span', 'rs-bars');
+  bars.setAttribute('aria-hidden', 'true');
+  for (let i = 1; i <= 3; i++) bars.append(el('i', i <= filled ? 'on' : ''));
+  const words = el('span', 'rs-rt');
+  words.append(el('b', '', name));
+  const line = ratingLine(r);
+  if (line) words.append(el('small', '', line));
+  box.append(bars, words);
+  return box;
+}
+
+// A place from the answer list. Places outside the Code are named as plain text, since there is nothing to open.
+function listPlaceRow(p, box, body) {
+  if (p.kind === 'outside') return body.append(el('p', 'rs-grey', `Outside the Code: ${p.id}`));
+  if (p.kind === 'table' || p.kind === 'rule') return placeRow(p.kind, p.id, box);
+  if (p.page) box.append(row(p.kind === 'definition' ? `Definition: ${p.id}` : pageWords(p.page), p.kind === 'definition' ? pageWords(p.page) : '', 'page', () => open({ type: 'page', page: p.page, name: p.kind === 'definition' ? p.id : pageWords(p.page), sub: 'Where to check' })));
+}
+
 function showAnswer(root, v) {
   root.append(topBar('The answer'));
   const area = el('div', 'rs-body');
@@ -372,11 +431,21 @@ function showAnswer(root, v) {
   root.append(foot);
   const mine = drawing;
   (async () => {
-    if (!v.result) v.result = await checkQuestion(v.text, { index, map, ready, pageData: viewer.tablePage });
+    if (!v.result) {
+      const checked = await checkQuestion(v.text, { index, map, ready, pageData: viewer.tablePage });
+      const list = await answerListHere();
+      v.result = combineAnswers(checked, list ? matchAnswer(v.found, list) : null);
+    }
     if (mine !== drawing) return;
     area.replaceChildren();
+    // The route is kept on this device for the pattern book. It never holds the book's own words.
+    deviceStore().then((kv) => savePattern(kv, v.found.stem, patternOf(v.found, v.result))).then(() => { hasPatterns = true; }).catch(() => {});
     if (v.result.status !== 'answer') {
       const body = scrollArea(area);
+      if (v.result.outside) {
+        body.append(el('p', 'rs-grey', `You picked ${v.pick}.`), el('h2', '', 'This is not in the Code'), el('p', 'rs-grey', v.result.because || 'The Code does not cover this. Ask your teacher where to look.'));
+        return;
+      }
       body.append(el('p', 'rs-grey', `You picked ${v.pick}.`), el('h2', '', 'I have not checked this question yet'), el('p', 'rs-grey', 'I only show answers checked against the book, so I will not guess. These are the places to settle it.'));
       if (v.found.places.length) {
         const box = listBox(body);
@@ -391,7 +460,7 @@ function showAnswer(root, v) {
     const mark = el('span', 'rs-mark');
     mark.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path class="rs-draw" d="${right ? 'M5 13l5 5 9-11' : 'M6 6l12 12M18 6 6 18'}"/></svg>`;
     const words = el('span', 'rs-words');
-    words.append(el('b', '', right ? `You picked ${v.pick}. That's right.` : `You picked ${v.pick}. The answer is ${r.choice}.`), el('small', '', `${answer.letter}) ${answer.text}`));
+    words.append(el('b', '', right ? `You picked ${v.pick}. That's right.` : `You picked ${v.pick}. The answer is ${r.choice}.`), el('small', '', answer ? `${answer.letter}) ${answer.text}` : ''));
     top.append(mark, words);
     const tabs = el('div', 'rs-tabs');
     tabs.setAttribute('role', 'tablist');
@@ -402,13 +471,15 @@ function showAnswer(root, v) {
       panel.replaceChildren();
       if (v.tab === 'why') {
         const card = el('div', 'card');
-        r.why.forEach((w, i) => {
+        const why = (r.why || []).filter((w) => w && typeof w === 'object');
+        why.forEach((w, i) => {
           const line = el('div', 'rs-way');
           const text = el('div');
           text.append(el('b', '', w.head), el('span', '', w.say));
           line.append(el('i', '', String(i + 1)), text);
           card.append(line);
         });
+        if (!why.length) card.append(el('p', 'rs-grey', r.because || 'See Where to check for the places to read.'));
         panel.append(card);
         if (r.mistake) {
           const tint = el('div', 'rs-tint');
@@ -417,8 +488,11 @@ function showAnswer(root, v) {
         }
       } else {
         const box = listBox(panel);
-        for (const e of r.evidence) placeRow(e.kind, e.ref, box);
-        panel.append(el('p', 'rs-small', 'Checked against the book'));
+        for (const e of r.evidence || []) placeRow(e.kind, e.ref, box);
+        for (const p of r.places || []) listPlaceRow(p, box, panel);
+        if (!box.children.length) box.remove();
+        for (const src of r.sources || []) panel.append(el('p', 'rs-grey', src));
+        panel.append(el('p', 'rs-small', (r.evidence || []).length ? 'Checked against the book' : 'From the answer list'));
         if (r.pattern) {
           const tint = el('div', 'rs-tint');
           tint.append(el('b', '', 'Pattern to remember'), document.createTextNode(r.pattern));
@@ -435,10 +509,66 @@ function showAnswer(root, v) {
       b.setAttribute('role', 'tab');
       tabs.append(b);
     }
-    area.append(top, tabs, panel);
+    area.append(top, ratingBox(r), tabs, panel);
     fill();
   })().catch(() => {
     area.replaceChildren(el('p', 'rs-grey gut rs-wait', 'This could not be checked. Try opening your book again.'));
+  });
+}
+
+// The pattern book: a quiet list of routes from questions already asked. No timers, scores, streaks or new questions.
+const SCOPE_WORDS = { general: 'General section', specific: 'Specific section' };
+const placeWords = (p) => (p ? `${p.kind === 'table' ? 'Table' : p.kind === 'rule' ? 'Rule' : 'Page'} ${p.id}` : 'No one place');
+
+const ASK_WORDS = { type: 'which type', size: 'a size', rating: 'a rating', distance: 'a distance', number: 'a number', meaning: 'a meaning', other: 'something else' };
+
+function showPatterns(root, v) {
+  root.append(topBar('Pattern book'));
+  const area = el('div', 'rs-body');
+  root.append(area);
+  const mine = drawing;
+  (async () => {
+    const groups = groupPatterns(await loadPatterns(await deviceStore()));
+    if (mine !== drawing) return;
+    const body = scrollArea(area);
+    if (v.pick != null && groups[v.pick]) {
+      const g = groups[v.pick];
+      const p = g.pattern;
+      const asks = ASK_WORDS[p.asks] || p.asks;
+      body.append(el('h2', '', `Asks ${asks}`));
+      body.append(el('p', 'rs-small', 'The route'));
+      const card = el('div', `card${v.retrace ? ' rs-hidden-steps' : ''}`);
+      [['What it asks', asks], ['General or specific', SCOPE_WORDS[p.scope] || 'Not clear'], ['Index words', p.indexWords.join(', ') || 'None matched'], ['Where it ends', placeWords(p.place)]].forEach(([head, say], i) => {
+        const line = el('div', 'rs-way');
+        const text = el('div');
+        text.append(el('b', '', head), el('span', '', say));
+        line.append(el('i', '', String(i + 1)), text);
+        card.append(line);
+      });
+      body.append(card);
+      if (v.retrace) body.append(el('p', 'rs-tint', 'Say each step to yourself, then tap Show steps.'));
+      if (!p.clear && p.why) body.append(el('p', 'rs-grey', p.why));
+      body.append(el('p', 'rs-small', 'Your questions on this route'));
+      const qs = el('div', 'card');
+      for (const q of g.questions) qs.append(el('p', 'rs-saved-q', q));
+      body.append(qs);
+      const foot = el('div', 'rs-foot gut');
+      foot.append(tapButton(v.retrace ? 'btn' : 'btn soft', v.retrace ? 'Show steps' : 'Retrace it from memory', () => {
+        v.retrace = !v.retrace;
+        draw();
+      }));
+      root.append(foot);
+      return;
+    }
+    body.append(el('p', 'rs-grey', 'Routes from your own questions.'));
+    if (!groups.length) return;
+    const box = listBox(body);
+    groups.forEach((g, i) => {
+      const p = g.pattern;
+      box.append(row(`Asks ${ASK_WORDS[p.asks] || p.asks}`, `${SCOPE_WORDS[p.scope] || 'Not clear'} · ${placeWords(p.place)}`, 'list', () => open({ type: 'patterns', pick: i })));
+    });
+  })().catch(() => {
+    area.replaceChildren(el('p', 'rs-grey gut rs-wait', 'The pattern book could not be opened.'));
   });
 }
 
@@ -850,6 +980,12 @@ function searchFor(text) {
   return { type: 'walk', text, dropped: [], at: 0 };
 }
 
+function showPatternButton() {
+  const b = $('patterns');
+  if (b) b.hidden = !hasPatterns || $('form').hidden;
+}
+$('patterns').onclick = () => open({ type: 'patterns' });
+
 $('form').onsubmit = (e) => {
   e.preventDefault();
   if (!index) return;
@@ -869,6 +1005,110 @@ $('q').onkeydown = (e) => {
   }
 };
 addEventListener('resize', () => refit?.());
+
+/* ---------- Full screen, the lock and the phone's Back button ---------- */
+const LOCK = 'ce-locked';
+const canFill = () => Boolean(document.documentElement.requestFullscreen && document.fullscreenEnabled);
+async function fillScreen(on) {
+  try {
+    if (on) await document.documentElement.requestFullscreen({ navigationUI: 'hide' });
+    else if (document.fullscreenElement) await document.exitFullscreen();
+  } catch {
+    // The browser said no. The app still works.
+  }
+}
+function toast(words) {
+  $('app').querySelector('.rs-toast')?.remove();
+  const t = el('div', 'rs-toast', words);
+  t.setAttribute('role', 'status');
+  t.onanimationend = () => t.remove();
+  $('app').append(t);
+}
+function showStay(b) {
+  b.replaceChildren(ic(locked ? 'lock' : 'unlock'));
+  b.setAttribute('aria-label', locked ? 'Unlock' : 'Lock the app so Back cannot leave it');
+  b.setAttribute('aria-pressed', String(locked));
+}
+function stayButton() {
+  const b = tapButton('rs-iconbtn rs-stay', undefined, () => setLocked(!locked));
+  showStay(b);
+  return b;
+}
+function setLocked(on) {
+  locked = on;
+  try {
+    localStorage.setItem(LOCK, on ? 'on' : 'off');
+  } catch {
+    // It still works for now. It just is not remembered.
+  }
+  for (const b of document.querySelectorAll('.rs-stay')) showStay(b);
+  keepBack();
+  if (on && canFill()) fillScreen(true);
+  toast(on ? 'Locked. Back stays in the app.' : 'Unlocked.');
+}
+function showFullScreen() {
+  const b = $('fullscreen');
+  const on = Boolean(document.fullscreenElement);
+  b.hidden = !canFill();
+  b.replaceChildren(ic(on ? 'shrink' : 'expand'));
+  b.setAttribute('aria-label', on ? 'Leave full screen' : 'Use the full screen');
+  b.setAttribute('aria-pressed', String(on));
+}
+$('fullscreen').onclick = () => fillScreen(!document.fullscreenElement);
+document.addEventListener('fullscreenchange', showFullScreen);
+// The phone can drop full screen by itself. While locked, the next tap brings it back.
+document.addEventListener('click', (e) => {
+  if (locked && canFill() && !document.fullscreenElement && !e.target.closest('.rs-stay, #fullscreen')) fillScreen(true);
+}, true);
+
+// An extra history entry catches the phone's Back button, so Back moves through the app instead of leaving it.
+function keepBack() {
+  if ((views.length || locked) && !guarded) {
+    history.pushState({ ceBack: true }, '');
+    guarded = true;
+  }
+}
+addEventListener('popstate', () => {
+  guarded = false;
+  if (views.length) goBack();
+  else if (locked) toast('Locked. Tap the lock to leave.');
+  keepBack();
+});
+
+/* ---------- Coming back to where you were ---------- */
+// Kept on this device only, so leaving the app does not lose your place.
+const SESSION = 'ce-session';
+function saveSession() {
+  try {
+    if (views.length) localStorage.setItem(SESSION, JSON.stringify(views, (k, value) => (k === 'found' || k === 'result' ? undefined : value)));
+    else localStorage.removeItem(SESSION);
+  } catch {
+    // Your place is not kept this time.
+  }
+}
+function resumeSession() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(SESSION) || 'null');
+    if (!Array.isArray(saved) || !saved.length) return;
+    for (const v of saved) if (v.type === 'walk' || v.type === 'answer') v.found = findInBook(v.text, index, map, ready, { dropped: v.dropped || [] });
+    views = saved;
+    draw();
+  } catch {
+    views = [];
+    draw();
+  }
+}
+addEventListener('pagehide', saveSession);
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) saveSession();
+});
+try {
+  locked = localStorage.getItem(LOCK) === 'on';
+} catch {
+  // Nothing was remembered.
+}
+$('home').querySelector('.rs-homeicons').append(stayButton());
+showFullScreen();
 
 /* ---------- Night mode ---------- */
 // It starts by following the phone's dark mode. Once you tap the button, your choice is remembered.

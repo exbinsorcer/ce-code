@@ -8,7 +8,7 @@
 <meta name="ce-book" content="carried">
 <link rel="icon" href="icons/icon-192.png">
 <link rel="manifest" href="manifest.webmanifest">
-<link rel="stylesheet" href="styles.css?v=c67fefb1">
+<link rel="stylesheet" href="styles.css?v=005809e6">
 <script>
 // Set before the page paints, so night mode never flashes white.
 (function () {
@@ -21,7 +21,7 @@
 <body>
 <div id="app" class="rs-app">
   <main class="rs-scroll gut" id="home">
-    <div class="rs-homehead"><h1>Find it in the Code</h1><button class="rs-iconbtn" id="night" type="button"></button></div>
+    <div class="rs-homehead"><h1>Find it in the Code</h1><div class="rs-homeicons"><button class="rs-iconbtn" id="night" type="button"></button><button class="rs-iconbtn" id="fullscreen" type="button" hidden></button></div></div>
     <form class="rs-lock" id="lock" hidden>
       <label class="f">Password<input class="field" id="password" type="password" autocomplete="current-password"></label>
       <button class="btn" id="unlock">Unlock</button>
@@ -34,16 +34,17 @@
     <form class="rs-ask" id="form" autocomplete="off" hidden>
       <div class="card"><textarea id="q" placeholder="Paste a question, or type 2-328, 32 or Table 65" aria-label="Question, rule, section or table" disabled></textarea></div>
       <button class="btn" id="go" disabled>Find</button>
+      <button class="btn soft" id="patterns" type="button" hidden>Pattern book</button>
     </form>
     <p class="rs-grey" id="say" role="status" aria-live="polite"></p>
     <label class="btn soft" id="pick" hidden>Choose your Code PDF<input type="file" id="file" accept="application/pdf,.pdf" hidden></label>
     <button class="btn soft" id="retry" type="button" hidden>Try again</button>
     <div class="rs-push"></div>
     <button class="link" id="lockNow" type="button" hidden>Lock my book now</button>
-    <p class="note">Build c67fefb1</p>
+    <p class="note">Build 005809e6</p>
   </main>
   <section class="rs-view" id="result" hidden></section>
 </div>
-<script type="module" src="rules-ui.js?v=c67fefb1"></script>
+<script type="module" src="rules-ui.js?v=005809e6"></script>
 </body>
 </html>

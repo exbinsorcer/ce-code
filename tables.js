@@ -3,7 +3,7 @@
 //
 // It uses the text pieces and their positions, plus the thin lines the book draws between cells.
 // When a value could belong to two rows or two columns, the table is marked 'unsure' with the reason. It never guesses.
-import { toItems } from './rules.js?v=c67fefb1';
+import { toItems } from './rules.js?v=005809e6';
 
 // The PDF.js drawing step numbers this file needs. They match the copy in app/vendor/pdfjs.
 const OPS = { save: 10, restore: 11, transform: 12, constructPath: 91, endPath: 28, fills: new Set([20, 21, 22, 23, 24, 25, 26, 27]) };
@@ -693,9 +693,42 @@ function namesEachBand(part, i, has) {
     || marks.every(Boolean) && marks.length === 1);
 }
 
+// Why one page's columns cannot be read with another's, or null when they match.
+function mismatch(first, part) {
+  // Edges split by gaps alone move a little from page to page; drawn edges must line up.
+  const near = (a, b, soft) => Math.abs(a - b) < (soft ? 15 : 3);
+  const same = part.cols.length === first.cols.length && part.cols.every((c, i) => near(c.x0, first.cols[i].x0, c.soft || first.cols[i].soft) && near(c.x1, first.cols[i].x1, part.cols[i + 1]?.soft || first.cols[i + 1]?.soft));
+  if (!same) return `the columns on page ${part.reg.page.n} do not match page ${first.reg.page.n}`;
+  const labels = (h) => h.map((c) => [...c.groups, ...c.label].map((x) => x.text).join(' | ')).join(' || ');
+  if (part.head.some((c) => c.label.length || c.groups.length) && labels(part.head) !== labels(first.head)) {
+    return `the headings on page ${part.reg.page.n} do not match page ${first.reg.page.n}`;
+  }
+  return null;
+}
+
+// Splits a table into runs of pages that share their columns, and reads each run as a whole table.
+// A page holding only footnotes goes with the run before it.
+function sectionsOf(label, parts, noteParts) {
+  const runs = [];
+  for (const part of parts) {
+    const run = runs[runs.length - 1];
+    if (run && !mismatch(run.parts[0], part)) run.parts.push(part);
+    else runs.push({ parts: [part] });
+  }
+  for (const np of noteParts) {
+    const run = [...runs].reverse().find((r) => r.parts[0].reg.page.n < np.reg.page.n) || runs[0];
+    run.notes = [...(run.notes || []), np];
+  }
+  return runs.map((run) => {
+    const pageList = [...run.parts, ...(run.notes || [])].map((p) => p.reg.page).sort((a, b) => a.n - b.n);
+    const t = readTable(label, pageList, { split: false });
+    return { status: t.status, reasons: t.reasons, columns: t.columns, rows: t.rows, notes: t.notes, stub: t.stub, pages: pageList.map((p) => p.n) };
+  });
+}
+
 // pages: page data from readPageData() in app/viewer.js, one per page the table is on, each with `lines` from readRulings().
 // Without `lines` most tables come back 'unsure', because the borders are what show which box a value is in.
-export function readTable(label, pages) {
+export function readTable(label, pages, { split = true } = {}) {
   const reasons = [];
   const result = { label, status: 'unsure', reasons, columns: [], rows: [], notes: [] };
   const parts = [];
@@ -719,16 +752,15 @@ export function readTable(label, pages) {
   // The first page sets the columns. Later pages must have the same ones.
   const first = parts[0];
   for (const part of parts.slice(1)) {
-    // Edges split by gaps alone move a little from page to page; drawn edges must line up.
-    const near = (a, b, soft) => Math.abs(a - b) < (soft ? 15 : 3);
-    const same = part.cols.length === first.cols.length && part.cols.every((c, i) => near(c.x0, first.cols[i].x0, c.soft || first.cols[i].soft) && near(c.x1, first.cols[i].x1, part.cols[i + 1]?.soft || first.cols[i + 1]?.soft));
-    if (!same) reasons.push(`the columns on page ${part.reg.page.n} do not match page ${first.reg.page.n}`);
-    const labels = (h) => h.map((c) => [...c.groups, ...c.label].map((x) => x.text).join(' | ')).join(' || ');
-    if (same && part.head.some((c) => c.label.length || c.groups.length) && labels(part.head) !== labels(first.head)) {
-      reasons.push(`the headings on page ${part.reg.page.n} do not match page ${first.reg.page.n}`);
-    }
+    const why = mismatch(first, part);
+    if (why) reasons.push(why);
   }
-  if (reasons.some((r) => /do not match/.test(r))) return result;
+  if (reasons.some((r) => /do not match/.test(r))) {
+    // Some tables change their columns from page to page. Each run of pages with the same columns is read as a table
+    // of its own, in `sections`. The table itself stays unsure, so code that does not know sections still skips it.
+    if (split) result.sections = sectionsOf(label, parts, noteParts);
+    return result;
+  }
 
   // The label column is the first one, unless the first holds group names that span several rows of the second.
   // That shows as more borders across the second column than the first, inside the body, with blanks in the first.
@@ -784,7 +816,7 @@ export function readTable(label, pages) {
           groups.push(groupCells[i] || '');
         }
         const { text: labelText, notes } = readText(own[stub].map((t) => t.text));
-        if (!labelText) reasons.push(`a row on page ${part.reg.page.n} has values but no label`);
+        // A row with no label is kept for now: it may be half of a cell whose two values are stacked. That is settled below.
         const cells = {};
         for (let i = stub + 1; i < width; i++) {
           // A merged cell gets the box of the whole merged area, and says which columns it covers.
@@ -798,6 +830,27 @@ export function readTable(label, pages) {
       }
     }
   }
+  // A row with no label and one filled cell, between two rows on its page, is a second value stacked in a box beside it.
+  // It cannot be told which row it belongs to, so the cells above and below it in that column are marked unsure and the
+  // rest of the table still reads. Any other row with no label leaves the whole table unsure, as before.
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+    if (r.label) continue;
+    const filled = Object.entries(r.cells).filter(([, c]) => c.text);
+    const above = rows[i - 1];
+    const below = rows[i + 1];
+    // Both neighbours must already hold their own value in that column. If one is blank, the value may be its missing
+    // value, so the table stays unsure.
+    const key = filled[0]?.[0];
+    if (filled.length === 1 && above?.label && below?.label && above.page === r.page && below.page === r.page && above.cells[key]?.text && below.cells[key]?.text) {
+      for (const n of [above, below]) if (n.cells[key]) n.cells[key].unsure = 'two values are stacked near this box, so it is not clear which is this row\'s';
+      rows.splice(i, 1);
+      i--;
+    } else reasons.push(`a row on page ${r.page} has values but no label`);
+  }
+  rows.forEach((r, i) => {
+    r.key = `r${i + 1}`;
+  });
   if (!rows.length) reasons.push('no rows found');
 
   const seen = new Map();

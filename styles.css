@@ -145,7 +145,14 @@ mark{background:var(--soft);color:var(--ink);font-weight:600}
 .rs-tools button[disabled]{opacity:.35;cursor:default}
 .rs-view .searchbar .btn{flex:none;width:auto}
 .rs-homehead{flex:none;display:flex;align-items:center;justify-content:space-between;gap:8px}
-.rs-homehead .rs-iconbtn{margin:0 -10px 0 0}
+.rs-homeicons{flex:none;display:flex;margin-right:-10px}
+.rs-homehead .rs-iconbtn{margin:0}
+.rs-iconbtn.rs-stay{margin:0 -10px 0 0}
+.rs-homehead .rs-iconbtn.rs-stay{margin:0}
+#app.rs-app{position:relative}
+:root:fullscreen{background:var(--page)}
+.rs-toast{position:absolute;left:16px;right:16px;bottom:calc(84px + env(safe-area-inset-bottom,0px));z-index:3;padding:12px;border-radius:12px;background:var(--ink);color:var(--on-ink);font-size:14px;line-height:20px;text-align:center;pointer-events:none;animation:rs-toast 2.6s ease both}
+@keyframes rs-toast{0%{opacity:0}10%{opacity:1}65%{opacity:1}100%{opacity:0}}
 .rs-ready{flex:none;padding-bottom:12px}
 .rs-wait{padding-block:14px}
 .rs-tint{flex:none;padding:12px;border-radius:12px;background:var(--soft);font-size:14px;line-height:20px;overflow-wrap:anywhere}
@@ -192,3 +199,16 @@ mark{background:var(--soft);color:var(--ink);font-weight:600}
  .rs-ask textarea{height:64px}
  #home h1{font-size:22px;line-height:28px}
 }
+/* The confidence rating on the answer screen. Three bars and one line. Not a button. */
+.rs-rate{flex:none;display:flex;align-items:flex-start;gap:12px;padding-block:2px 14px}
+.rs-bars{flex:none;display:flex;align-items:flex-end;gap:3px;height:22px}
+.rs-bars i{width:7px;border-radius:2px;background:var(--line)}
+.rs-bars i:nth-child(1){height:9px}.rs-bars i:nth-child(2){height:15px}.rs-bars i:nth-child(3){height:22px}
+.rs-bars i.on{background:var(--ink)}
+.rs-saved-q{margin:0;padding:10px 12px;font-size:14px;line-height:20px;overflow-wrap:anywhere}
+.rs-saved-q+.rs-saved-q{border-top:1px solid var(--line)}
+.rs-hidden-steps .rs-way b,.rs-hidden-steps .rs-way span{filter:blur(6px);user-select:none}
+.rs-rt{min-width:0}
+.rs-rt b{display:block;font-size:14px;line-height:20px;font-weight:600}
+.rs-rt small{display:block;font-size:14px;line-height:20px;color:var(--grey);overflow-wrap:anywhere}
+#patterns{width:100%;margin-top:8px}

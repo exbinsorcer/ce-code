@@ -1,6 +1,6 @@
 // Finds answers in the book and builds the guided steps. No AI: it only reports what the book's own text shows.
 // book = { norm: [page text, lower case], raw: [page text], lines: async (page) => [{ y, items: [{ x, str }] }], total }
-import { normalizeText } from './logic.js?v=c67fefb1';
+import { normalizeText } from './logic.js?v=005809e6';
 
 const STOP = new Set(`a about an and any are as at be been being but by can could do does for from had has have how i if in into is it
 its may me must my no not of on or our shall should so than that the their them then there these they this to under up us was we were
@@ -26,17 +26,24 @@ const POINTS = '(?:\\(\\s*\\d+(?:\\.\\d+)?\\s*points?\\s*\\))?';
 const NEXT_QUESTION = new RegExp(`^question\\s*\\d+\\s*${POINTS}\\s*:?$`, 'i');
 const SITE_LINE = new RegExp(`^(?:question\\s*\\d*\\s*${POINTS}\\s*(?:options)?\\s*:?|listen|[A-Z]{2,}\\d*(?:-[0-9A-Z]+){2,})$`, 'i');
 
+// A true or false question on the course site: ['t'=True 'f'=False], an svg line, then a blank for the rule number.
+const TRUE_FALSE = /^\[\s*'t'\s*=\s*True\s+'f'\s*=\s*False\s*\]$/i;
+const SITE_LEFTOVER = /^(?:svg|dealt with in rule\.?)$/i;
+
 export function parseQuestion(raw) {
-  const lines = String(raw).split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const lines = String(raw).split(/\r?\n/).map((l) => l.trim().replace(/\\$/, '').trim()).filter(Boolean);
   const stemLines = [];
   const options = [];
+  if (lines.some((l) => TRUE_FALSE.test(l))) options.push({ letter: 'A', text: 'True' }, { letter: 'B', text: 'False' });
   for (const line of lines) {
+    if (TRUE_FALSE.test(line) || SITE_LEFTOVER.test(line)) continue;
     // Only the first question is read when several are pasted together.
-    if (options.length && NEXT_QUESTION.test(line)) break;
+    if (options.length > 2 && NEXT_QUESTION.test(line)) break;
+    if (options.length && !lines.some((l) => TRUE_FALSE.test(l)) && NEXT_QUESTION.test(line)) break;
     // A choice can start with a bullet, like "* A) ...".
     const m = line.match(/^(?:[*•-]\s*)?\(?([A-Ha-h])[).:]\s*(.*)$/);
     if (m) options.push({ letter: m[1].toUpperCase(), text: m[2] });
-    else if (options.length) {
+    else if (options.length && !lines.some((l) => TRUE_FALSE.test(l))) {
       const last = options[options.length - 1];
       last.text = `${last.text} ${line}`.trim();
     } else if (!SITE_LINE.test(line)) stemLines.push(line);

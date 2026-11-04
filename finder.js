@@ -1,9 +1,9 @@
 // Turns a question into where to look in the book, following the steps taught in class:
 // key words, definitions, contents, index, rule titles, then any table, note or rule the rule points to.
 // It never decides the answer. It uses the question only, not the answer choices, so it cannot give one away.
-import { parseQuestion } from './engine.js?v=c67fefb1';
-import { wordsOf, compareRules, lookup } from './rules.js?v=c67fefb1';
-import { tablesNamedIn } from './map.js?v=c67fefb1';
+import { parseQuestion } from './engine.js?v=005809e6';
+import { wordsOf, compareRules, lookup } from './rules.js?v=005809e6';
+import { tablesNamedIn } from './map.js?v=005809e6';
 
 const STOP = new Set(`a about above after all also an and any are as at be been being below between both but by can could do does during each every
 for from had has have how i if in into is it its of on onto or our per should so some such than that the their them then there these they this
@@ -47,8 +47,11 @@ export const GENERAL_SECTIONS = new Set([0, 2, 4, 6, 8, 10, 12, 14, 16, 26]);
 const DEFINE = /(?:definition\s+(?:of|for)|define|meaning\s+of|what\s+does|what\s+is\s+meant\s+by|what\s+is\s+an?|what\s+are)\s+(?:the\s+|an?\s+)?["'“]?([\p{L}\p{N} ,-]+?)["'”]?(?:\s+mean)?\s*\??$/iu;
 const LOOKS_LIKE_TABLE = /\b(what\s+size|how\s+big|minimum\s+size|maximum\s+number|how\s+many|ampacity|ampacities|correction\s+factors?|spacing|gauge|awg|rating\s+of|largest|smallest|type\s+of\s+\w*\s*enclosure|enclosure\s+type)\b/i;
 
+// "No. 6" is a size, not a negative.
+const sizeNumbers = (stem) => String(stem).replace(/\bNo\.\s*(?=\d)|\bNo\s+(?=\d)/gi, '#');
+
 export function watchWords(stem) {
-  const text = ` ${String(stem).toLowerCase().replace(/[^\p{L}\p{N}' -]+/gu, ' ').replace(/\s+/g, ' ')} `;
+  const text = ` ${sizeNumbers(stem).toLowerCase().replace(/[^\p{L}\p{N}' -]+/gu, ' ').replace(/\s+/g, ' ')} `;
   let rest = text;
   const found = [];
   for (const p of WATCH_PHRASES) {
@@ -62,7 +65,7 @@ export function watchWords(stem) {
 
 // The words a negative covers. "without a cover" gives cover. "spraying is not present" gives spraying.
 export function negatedWords(stem) {
-  const clean = String(stem).toLowerCase();
+  const clean = sizeNumbers(stem).toLowerCase();
   const out = new Set();
   const take = (s) => {
     for (const w of s.split(/[^\p{L}\p{N}-]+/u)) if (w && !STOP.has(w) && !CONDITIONS.includes(w)) out.add(w);
@@ -71,7 +74,7 @@ export function negatedWords(stem) {
     if (/^(?:present|required|permitted|allowed|used|applicable|needed|exposed)\b/.test(m[1])) continue;
     take(m[1].split(/\b(?:and|or|but|when|where|is|are)\b/)[0]);
   }
-  // The thing ruled out runs back to the nearest word that opens the clause: "when oil or coolant is not present".
+  // The thing ruled out runs back to the nearest word that opens the clause: "when a widget is not present".
   for (const m of clean.matchAll(/([^.;?]*?)\s+(?:is|are|was|were)\s+not\s+(?:present|required|permitted|allowed|used|exposed)\b/gu)) {
     const parts = m[1].split(/\b(?:when|where|if|that|while|because)\b/);
     take(parts.length > 1 ? parts[parts.length - 1] : m[1].trim().split(/\s+/).slice(-4).join(' '));
