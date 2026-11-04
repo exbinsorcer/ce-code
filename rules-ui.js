@@ -1,12 +1,13 @@
 // The search page. The book is read on this device each time the page opens. No AI.
-import * as store from './store.js?v=026f7ebb';
-import * as viewer from './viewer.js?v=026f7ebb';
-import { createIndexer, lookup, readPage, rulePreview, parseSectionNumber, lookupSection, searchSection } from './rules.js?v=026f7ebb';
-import { createBookMap, lookupTable, parseTableNumber, rulesNamedIn, tablesNamedIn, watchWordsIn } from './map.js?v=026f7ebb';
-import { prepareFinder, findInBook } from './finder.js?v=026f7ebb';
-import { TOTAL_PAGES } from './logic.js?v=026f7ebb';
-import { isLockedBook, unlockBook } from './crypt.js?v=026f7ebb';
-import { packBook, unpackBook } from './snapshot.js?v=026f7ebb';
+import * as store from './store.js?v=69e81bc8';
+import * as viewer from './viewer.js?v=69e81bc8';
+import { createIndexer, lookup, readPage, rulePreview, parseSectionNumber, lookupSection, searchSection } from './rules.js?v=69e81bc8';
+import { createBookMap, lookupTable, parseTableNumber, rulesNamedIn, tablesNamedIn, watchWordsIn } from './map.js?v=69e81bc8';
+import { prepareFinder, findInBook, hintsFor, markRanges } from './finder.js?v=69e81bc8';
+import { checkQuestion } from './checker.js?v=69e81bc8';
+import { TOTAL_PAGES } from './logic.js?v=69e81bc8';
+import { isLockedBook, unlockBook } from './crypt.js?v=69e81bc8';
+import { packBook, unpackBook } from './snapshot.js?v=69e81bc8';
 
 const $ = (id) => document.getElementById(id);
 let index = null;
@@ -65,6 +66,8 @@ const PATHS = {
   word: '<path d="M4 4h8l8 8-8 8-8-8z"/><path d="M8.5 8.5h.01"/>', book: '<path d="M4 5c3-1 6-1 8 1 2-2 5-2 8-1v14c-3-1-6-1-8 1-2-2-5-2-8-1z"/><path d="M12 6v14"/>',
   list: '<path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/>', search: '<circle cx="11" cy="11" r="6"/><path d="m16 16 4 4"/>', rule: '<path d="M6 4h9l3 3v13H6z"/><path d="M9 11h6M9 15h6"/>',
   table: '<path d="M4 5h16v14H4zM4 10h16M4 15h16M10 5v14"/>', note: '<path d="M5 4h14v12l-4 4H5z"/><path d="M15 20v-4h4M8 9h8M8 13h5"/>', page: '<path d="M6 3h9l4 4v14H6z"/><path d="M15 3v4h4"/>',
+  moon: '<path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z"/>', sun: '<circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6 7 7M17 17l1.4 1.4M5.6 18.4 7 17M17 7l1.4-1.4"/>',
+  zoom: '<circle cx="11" cy="11" r="6"/><path d="m16 16 4 4M11 8.5v5M8.5 11h5"/>',
   plus: '<path d="M12 5v14M5 12h14"/>', minus: '<path d="M5 12h14"/>', left: '<path d="M19 12H5M11 6l-6 6 6 6"/>', right: '<path d="M5 12h14M13 6l6 6-6 6"/>',
 };
 function ic(name) {
@@ -154,7 +157,7 @@ function draw() {
   root.hidden = !views.length;
   if (!views.length) return;
   const v = views[views.length - 1];
-  ({ walk: showWalk, section: showSection, refs: showRefs, missing: showMissing, rule: showItem, table: showItem, note: showItem, definition: showItem, page: showItem })[v.type](root, v);
+  ({ walk: showWalk, section: showSection, refs: showRefs, missing: showMissing, answer: showAnswer, rule: showItem, table: showItem, note: showItem, definition: showItem, page: showItem })[v.type](root, v);
 }
 
 /* ---------- A question: one step at a time ---------- */
@@ -203,6 +206,24 @@ function stepsFor(f, v) {
       },
     });
   }
+  const sectionRows = (body, list) => {
+    const box = listBox(body);
+    for (const s of list) box.append(row(`Section ${s.section}: ${s.title}`, s.page ? pageWords(s.page) : '', 'list', () => open({ type: 'section', section: s.section })));
+  };
+  steps.push({
+    ask: 'General or specific?',
+    why: 'Sections 2 to 16 and 26 are general. The rest only add to or change them, so if one fits your question, read it first.',
+    fill(body) {
+      const { specific, general } = f.scope;
+      body.append(el('p', 'rs-small', 'Specific sections'));
+      if (specific.length) sectionRows(body, specific);
+      else body.append(el('p', 'rs-grey', 'None of them match your words.'));
+      body.append(el('p', 'rs-small', 'General sections'));
+      if (general.length) sectionRows(body, general);
+      else body.append(el('p', 'rs-grey', specific.length ? `The general rules still count unless Section ${specific[0].section} changes them.` : 'None stand out. Try the Index next.'));
+      body.append(el('p', 'rs-small', 'Found through the Contents and Index'));
+    },
+  });
   if (f.headings.length) {
     steps.push({
       ask: 'Do these headings point to a section?',
@@ -240,11 +261,56 @@ function stepsFor(f, v) {
       body.append(el('p', 'rs-small', 'These are places to look, not the answer. Read the rule and decide.'));
     },
   });
+  if (f.options.length >= 2) {
+    steps.push({
+      ask: 'What is your final choice?',
+      final: true,
+      fill(body) {
+        const hints = hintsFor(f);
+        if (v.hints) {
+          const [title, words] = hints[(v.hints - 1) % hints.length];
+          const tint = el('div', 'rs-tint');
+          tint.append(el('b', '', `Hint ${((v.hints - 1) % hints.length) + 1} of ${hints.length}: ${title}`), document.createTextNode(words));
+          body.append(tint);
+        } else body.append(el('p', 'rs-grey', 'Take your time. Go back to the book as often as you like.'));
+        const box = listBox(body);
+        box.setAttribute('role', 'radiogroup');
+        box.setAttribute('aria-label', 'Answer choices');
+        for (const o of f.options) {
+          const b = tapButton('rs-opt', undefined, () => {
+            v.pick = o.letter;
+            for (const other of box.children) other.setAttribute('aria-checked', String(other === b));
+            $('lockIn').disabled = false;
+          });
+          b.setAttribute('role', 'radio');
+          b.setAttribute('aria-checked', String(v.pick === o.letter));
+          b.append(el('span', 'rs-dot'), el('span', '', `${o.letter}) ${o.text}`));
+          box.append(b);
+        }
+      },
+    });
+  }
   return steps;
+}
+
+// The answer stays hidden until you say yes here.
+function askToLock(root, v) {
+  const scrim = el('div', 'rs-scrim');
+  const pop = el('div', 'rs-pop gut');
+  pop.setAttribute('role', 'dialog');
+  pop.setAttribute('aria-modal', 'true');
+  const buttons = el('div', 'rs-foot');
+  const keep = tapButton('btn soft', 'Keep looking', () => scrim.remove());
+  buttons.append(keep, tapButton('btn', 'Yes, show me', () => open({ type: 'answer', text: v.text, pick: v.pick, found: v.found })));
+  pop.append(el('h2', '', `Is ${v.pick} your final answer?`), el('p', 'rs-grey', 'You will see the answer next, so keep looking if you are not sure.'), buttons);
+  scrim.append(pop);
+  root.append(scrim);
+  keep.focus();
 }
 
 function showWalk(root, v) {
   const f = findInBook(v.text, index, map, ready, { dropped: v.dropped });
+  v.found = f;
   const steps = stepsFor(f, v);
   v.at = Math.min(v.at, steps.length - 1);
   const st = steps[v.at];
@@ -261,6 +327,20 @@ function showWalk(root, v) {
   if (st.why) body.append(el('p', 'rs-grey', st.why));
   st.fill(body);
   const foot = el('div', 'rs-foot gut');
+  if (st.final) {
+    const hints = hintsFor(f).length;
+    const words = !v.hints ? 'Give me a hint' : v.hints % hints === 0 ? 'First hint again' : 'Next hint';
+    foot.append(tapButton('btn soft', words, () => {
+      v.hints = (v.hints || 0) + 1;
+      draw();
+    }));
+    const lock = tapButton('btn', 'Lock it in', () => askToLock(root, v));
+    lock.id = 'lockIn';
+    lock.disabled = !v.pick;
+    foot.append(lock);
+    root.append(foot);
+    return;
+  }
   const prev = tapButton('btn soft', 'Back', () => {
     v.at -= 1;
     draw();
@@ -274,6 +354,104 @@ function showWalk(root, v) {
     }));
   } else if (st.first) foot.append(tapButton('btn', `Open ${st.first.view.type === 'table' ? st.first.title : `Rule ${st.first.view.rule}`}`, () => open(st.first.view)));
   root.append(foot);
+}
+
+/* ---------- The answer ---------- */
+function startAgain() {
+  views = [];
+  draw();
+  $('q').value = '';
+  say('Ready. Paste a question, or type a rule, section or table.');
+  $('q').focus();
+}
+const placeRow = (kind, id, box) => {
+  if (kind === 'table') {
+    const t = map.tables.get(id);
+    box.append(row(`Table ${id}`, t?.page ? pageWords(t.page) : '', 'table', () => open({ type: 'table', label: id })));
+  } else {
+    const r = lookup(index, id);
+    box.append(row(`Rule ${id}`, r.pdfPage ? pageWords(r.pdfPage) : '', 'rule', () => open({ type: 'rule', rule: id })));
+  }
+};
+
+function showAnswer(root, v) {
+  root.append(topBar('The answer'));
+  const area = el('div', 'rs-body');
+  area.append(el('p', 'rs-grey gut rs-wait', 'Checking the book'));
+  root.append(area);
+  const foot = el('div', 'rs-foot gut');
+  foot.append(tapButton('btn', 'Try another question', startAgain));
+  root.append(foot);
+  const mine = drawing;
+  (async () => {
+    if (!v.result) v.result = await checkQuestion(v.text, { index, map, ready, pageData: viewer.tablePage });
+    if (mine !== drawing) return;
+    area.replaceChildren();
+    if (v.result.status !== 'answer') {
+      const body = scrollArea(area);
+      body.append(el('p', 'rs-grey', `You picked ${v.pick}.`), el('h2', '', 'I have not checked this question yet'), el('p', 'rs-grey', 'I only show answers checked against the book, so I will not guess. These are the places to settle it.'));
+      if (v.found.places.length) {
+        const box = listBox(body);
+        for (const p of v.found.places) placeRow(p.kind, p.id, box);
+      }
+      return;
+    }
+    const r = v.result;
+    const right = r.choice === v.pick;
+    const answer = v.found.options.find((o) => o.letter === r.choice);
+    const top = el('div', `rs-result gut${right ? '' : ' off'}`);
+    const mark = el('span', 'rs-mark');
+    mark.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path class="rs-draw" d="${right ? 'M5 13l5 5 9-11' : 'M6 6l12 12M18 6 6 18'}"/></svg>`;
+    const words = el('span', 'rs-words');
+    words.append(el('b', '', right ? `You picked ${v.pick}. That's right.` : `You picked ${v.pick}. The answer is ${r.choice}.`), el('small', '', `${answer.letter}) ${answer.text}`));
+    top.append(mark, words);
+    const tabs = el('div', 'rs-tabs');
+    tabs.setAttribute('role', 'tablist');
+    const panel = el('div', 'rs-scroll gut');
+    const fill = () => {
+      v.tab = v.tab || 'why';
+      for (const b of tabs.children) b.setAttribute('aria-selected', String(b.dataset.tab === v.tab));
+      panel.replaceChildren();
+      if (v.tab === 'why') {
+        const card = el('div', 'card');
+        r.why.forEach((w, i) => {
+          const line = el('div', 'rs-way');
+          const text = el('div');
+          text.append(el('b', '', w.head), el('span', '', w.say));
+          line.append(el('i', '', String(i + 1)), text);
+          card.append(line);
+        });
+        panel.append(card);
+        if (r.mistake) {
+          const tint = el('div', 'rs-tint');
+          tint.append(el('b', '', 'Common mistake'), document.createTextNode(r.mistake));
+          panel.append(tint);
+        }
+      } else {
+        const box = listBox(panel);
+        for (const e of r.evidence) placeRow(e.kind, e.ref, box);
+        panel.append(el('p', 'rs-small', 'Checked against the book'));
+        if (r.pattern) {
+          const tint = el('div', 'rs-tint');
+          tint.append(el('b', '', 'Pattern to remember'), document.createTextNode(r.pattern));
+          panel.append(tint);
+        }
+      }
+    };
+    for (const [key, name] of [['why', 'Why'], ['where', 'Where to check']]) {
+      const b = tapButton('rs-tab', name, () => {
+        v.tab = key;
+        fill();
+      });
+      b.dataset.tab = key;
+      b.setAttribute('role', 'tab');
+      tabs.append(b);
+    }
+    area.append(top, tabs, panel);
+    fill();
+  })().catch(() => {
+    area.replaceChildren(el('p', 'rs-grey gut rs-wait', 'This could not be checked. Try opening your book again.'));
+  });
 }
 
 function refWords(refs) {
@@ -448,6 +626,36 @@ function itemFor(v) {
   return { name: v.name || `PDF page ${v.page}`, title: v.sub || '', home: v.page, partLabel: '', stats: [printedStat(v.page), [String(v.page), 'PDF page']], watch: [], lines: [], points: [] };
 }
 
+// Marks your key words on the page, like a highlighter. The colour multiplies, so the words stay readable.
+function markWords(canvas, page, items, marks) {
+  const g = canvas.getContext('2d');
+  const ruler = document.createElement('canvas').getContext('2d');
+  ruler.font = '100px sans-serif';
+  g.save();
+  g.globalCompositeOperation = 'multiply';
+  g.fillStyle = '#ffe27a';
+  for (const it of items) {
+    const ranges = markRanges(it.str, marks);
+    if (!ranges.length) continue;
+    const [a, b, c, d, e, f] = it.t;
+    const along = Math.hypot(a, b) || 1;
+    const up = Math.hypot(c, d) || along;
+    const whole = ruler.measureText(it.str).width || 1;
+    const spot = (s, h) => viewer.toCanvas(page, e + (a / along) * s + (c / up) * h, f + (b / along) * s + (d / up) * h);
+    for (const { start, end } of ranges) {
+      const from = (ruler.measureText(it.str.slice(0, start)).width / whole) * it.w;
+      const to = (ruler.measureText(it.str.slice(0, end)).width / whole) * it.w;
+      const corners = [spot(from, -0.22 * up), spot(to, -0.22 * up), spot(to, 0.95 * up), spot(from, 0.95 * up)];
+      if (corners.some((pt) => !pt)) continue;
+      g.beginPath();
+      corners.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y)));
+      g.closePath();
+      g.fill();
+    }
+  }
+  g.restore();
+}
+
 function showItem(root, v) {
   if (v.type === 'rule') {
     const r = lookup(index, v.rule);
@@ -462,8 +670,14 @@ function showItem(root, v) {
     return;
   }
   if (v.at === undefined) v.at = info.home;
-  if (v.zoom === undefined) v.zoom = 1;
   const onHome = v.at === info.home;
+  // Rules and definitions open zoomed in, so they can be read right away. Everything else opens whole.
+  const canRead = (v.type === 'rule' || v.type === 'definition') && onHome && info.part && !info.part.sideways;
+  const levels = canRead ? ['whole', 'read', 1.6, 2.5] : ['whole', 1.6, 2.5];
+  if (v.level === undefined) v.level = canRead ? 'read' : 'whole';
+  if (!levels.includes(v.level)) v.level = 'whole';
+  const walk = [...views].reverse().find((x) => x.type === 'walk');
+  const marks = walk?.found ? new Set(walk.found.marks) : null;
   root.append(topBar(`PDF ${v.at}`, info.badge || (printedOn(v.at) ? `Printed ${printedOn(v.at)}` : '')));
   const main = el('div', 'rs-body');
   const stage = el('div', 'rs-stage');
@@ -535,31 +749,62 @@ function showItem(root, v) {
   };
   tool('left', 'Previous page', v.at <= 1, () => turn(-1));
   tool('right', 'Next page', v.at >= index.total, () => turn(1));
-  const smaller = tool('minus', 'Smaller', v.zoom <= 1, () => setZoom(v.zoom - 1));
-  const bigger = tool('plus', 'Bigger', v.zoom >= 3, () => setZoom(v.zoom + 1));
-  sheet.append(head, more, tools);
+  const smaller = tool('minus', 'Smaller', v.level === 'whole', () => setLevel(levels[levels.indexOf(v.level) - 1]));
+  const bigger = tool('plus', 'Bigger', v.level === levels[levels.length - 1], () => setLevel(levels[levels.indexOf(v.level) + 1]));
+  let wide = null;
+  if (canRead) {
+    tools.classList.add('five');
+    wide = tapButton('', undefined, () => setLevel(v.level === 'whole' ? 'read' : 'whole'));
+    wide.id = 'wholePage';
+    tools.append(wide);
+  }
+  const showWide = () => wide?.replaceChildren(ic(v.level === 'whole' ? 'zoom' : 'page'), document.createTextNode(v.level === 'whole' ? 'Zoom in' : 'Whole page'));
+  showWide();
+  sheet.append(head, more);
+  if (walk?.found?.options.length >= 2) {
+    const ready = el('div', 'rs-ready gut');
+    ready.append(tapButton('btn', "I'm ready to choose", () => {
+      views.length = views.indexOf(walk) + 1;
+      walk.at = Number.MAX_SAFE_INTEGER;
+      draw();
+    }));
+    sheet.append(ready);
+  }
+  sheet.append(tools);
   main.append(stage, sheet);
   root.append(main);
 
   let partSpot = null;
+  let span = null; // Where the rule's own words start and end across the page.
+  let pageLeft = 0;
+  let pageWide = 612;
   // Sizes the page to the space left above the sheet. Nothing ever sits on top of it.
   const fit = () => {
     if (!canvas.width || canvas.width <= 300) return;
     const room = [stage.clientWidth - 16, stage.clientHeight - 16];
     const ratio = canvas.width / canvas.height;
-    const width = v.zoom === 1 ? Math.min(room[0], room[1] * ratio) : room[0] * (v.zoom === 2 ? 1.6 : 2.5);
+    let width = room[0] * (typeof v.level === 'number' ? v.level : 1);
+    if (v.level === 'whole') width = Math.min(room[0], room[1] * ratio);
+    if (v.level === 'read') width = span ? (room[0] * pageWide) / (span.x1 - span.x0) : room[0] * 1.3;
     canvas.style.width = `${Math.round(width)}px`;
     canvas.style.height = `${Math.round(width / ratio)}px`;
+    // Room below the page, so the rule can sit at the top of the screen even near the end of a page.
+    canvas.style.marginBottom = v.level === 'whole' ? '0' : `${Math.round(stage.clientHeight * 0.7)}px`;
   };
   refit = fit;
-  function setZoom(z) {
-    v.zoom = Math.max(1, Math.min(3, z));
-    smaller.disabled = v.zoom <= 1;
-    bigger.disabled = v.zoom >= 3;
+  // Going bigger lands on the rule, not the corner of the page.
+  const place = () => {
+    const across = parseFloat(canvas.style.width) / pageWide;
+    stage.scrollTop = v.level !== 'whole' && partSpot !== null ? partSpot * parseFloat(canvas.style.height) : 0;
+    stage.scrollLeft = v.level !== 'whole' && span ? (span.x0 - pageLeft) * across : 0;
+  };
+  function setLevel(level) {
+    v.level = level;
+    smaller.disabled = level === 'whole';
+    bigger.disabled = level === levels[levels.length - 1];
+    showWide();
     fit();
-    // Going bigger lands on the rule, not the top of the page.
-    stage.scrollTop = v.zoom > 1 && partSpot !== null ? partSpot * parseFloat(canvas.style.height) - 8 : 0;
-    stage.scrollLeft = 0;
+    place();
   }
 
   (async () => {
@@ -567,10 +812,19 @@ function showItem(root, v) {
     const done = await viewer.drawPage(canvas, v.at, stage.clientWidth || 320, 2);
     if (!done || mine !== drawing) return;
     const [left, bottom, right, top] = viewer.pageBox(v.at) || [0, 0, 612, 792];
+    pageLeft = left;
+    pageWide = right - left;
+    const words = await viewer.pageItems(v.at);
+    if (mine !== drawing) return;
+    if (marks?.size) markWords(canvas, v.at, words, marks);
     if (onHome && info.part && !info.part.sideways) {
+      // Fit the box and the zoom to the rule's own words, not the page margins.
+      const floor = (info.part.bottom === null ? bottom + 40 : info.part.bottom) + 1;
+      const own = words.filter((it) => Math.abs(it.t[1]) < 0.01 && it.t[5] <= info.part.top + 3 && it.t[5] > floor && it.t[4] >= info.part.x0 - 24 && it.t[4] < info.part.x1);
+      if (own.length) span = { x0: Math.min(...own.map((it) => it.t[4])) - 6, x1: Math.max(...own.map((it) => it.t[4] + it.w)) + 6 };
       const k = canvas.width / (right - left);
-      const x = (info.part.x0 - left) * k;
-      const w = (info.part.x1 - info.part.x0) * k;
+      const x = ((span ? span.x0 : info.part.x0) - left) * k;
+      const w = ((span ? span.x1 : info.part.x1) - (span ? span.x0 : info.part.x0)) * k;
       const y = Math.max(0, (top - info.part.top - 11) * k);
       const end = info.part.bottom === null ? (top - bottom - 40) * k : (top - info.part.bottom - 10) * k;
       const h = Math.max(1, end - y);
@@ -586,7 +840,8 @@ function showItem(root, v) {
       partSpot = y / canvas.height;
     }
     fit();
-    if (v.zoom > 1) setZoom(v.zoom);
+    place();
+    stage.dataset.ready = '1';
   })().catch(() => {
     stage.replaceChildren(el('p', 'rs-grey', 'This page could not be shown. Try opening your book again.'));
   });
@@ -628,6 +883,45 @@ $('q').onkeydown = (e) => {
   }
 };
 addEventListener('resize', () => refit?.());
+
+/* ---------- Night mode ---------- */
+// It starts by following the phone's dark mode. Once you tap the button, your choice is remembered.
+const NIGHT = 'ce-night';
+function showNight() {
+  const on = document.documentElement.hasAttribute('data-night');
+  document.querySelector('meta[name=theme-color]')?.setAttribute('content', on ? '#000000' : '#f6f6f3');
+  $('night').replaceChildren(ic(on ? 'sun' : 'moon'));
+  $('night').setAttribute('aria-label', on ? 'Use the day look' : 'Use the black night look');
+  $('night').setAttribute('aria-pressed', String(on));
+}
+$('night').onclick = () => {
+  const on = document.documentElement.toggleAttribute('data-night');
+  try {
+    localStorage.setItem(NIGHT, on ? 'on' : 'off');
+  } catch {
+    // It still works for now. It just is not remembered.
+  }
+  showNight();
+};
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
+  let chosen = null;
+  try {
+    chosen = localStorage.getItem(NIGHT);
+  } catch {
+    // Nothing was remembered.
+  }
+  if (chosen === null) {
+    document.documentElement.toggleAttribute('data-night', e.matches);
+    showNight();
+  }
+});
+try {
+  const chosen = localStorage.getItem(NIGHT);
+  if (chosen) document.documentElement.toggleAttribute('data-night', chosen === 'on');
+} catch {
+  // Nothing was remembered, so the phone's setting stands.
+}
+showNight();
 
 /* ---------- Getting the book ---------- */
 // You choose the PDF once. It is kept in this browser on this device, so it opens by itself after that.

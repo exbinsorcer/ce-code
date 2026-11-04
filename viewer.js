@@ -1,5 +1,6 @@
 // Shows the PDF and searches it. The page text is held in memory only and never saved.
-import { normalizeText } from './logic.js?v=026f7ebb';
+import { normalizeText } from './logic.js?v=69e81bc8';
+import { readRulings } from './tables.js?v=69e81bc8';
 
 let pdfjs;
 let doc = null;
@@ -51,6 +52,7 @@ export async function drawPage(canvas, n, width, zoom) {
   const css = (width / base.width) * zoom;
   const ratio = Math.min(window.devicePixelRatio || 1, 3);
   const view = page.getViewport({ scale: css * ratio });
+  lastBox.viewport = view;
   const off = document.createElement('canvas');
   off.width = Math.floor(view.width);
   off.height = Math.floor(view.height);
@@ -69,6 +71,16 @@ export async function drawPage(canvas, n, width, zoom) {
   canvas.style.height = `${Math.floor(view.height / ratio)}px`;
   canvas.getContext('2d').drawImage(off, 0, 0);
   return true;
+}
+
+// Where a point on the book page lands on the canvas last drawn for that page.
+export const toCanvas = (n, x, y) => (lastBox && lastBox.n === n && lastBox.viewport ? lastBox.viewport.convertToViewportPoint(x, y) : null);
+
+// The text pieces on a page with their positions, for marking words. Held in memory only.
+export async function pageItems(n) {
+  const page = await doc.getPage(n);
+  const { items } = await page.getTextContent();
+  return items.filter((it) => it.str && it.str.trim()).map((it) => ({ str: it.str, t: it.transform, w: it.width }));
 }
 
 // One page's text with its positions, grouped into lines from the top down.
@@ -126,6 +138,12 @@ export async function readAllText(onProgress) {
 // One page's text pieces with their font names and positions, for the rule search. Held in memory only.
 export async function pageData(n, source = doc) {
   return readPageData(source, n);
+}
+
+// One page for the table reader: its text plus the thin lines drawn between cells.
+export async function tablePage(n) {
+  const data = await readPageData(doc, n);
+  return { ...data, lines: await readRulings(await doc.getPage(n)) };
 }
 
 export async function readPageData(pdf, n) {

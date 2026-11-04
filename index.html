@@ -7,12 +7,20 @@
 <title>CE Code</title>
 <link rel="icon" href="icons/icon-192.png">
 <link rel="manifest" href="manifest.webmanifest">
-<link rel="stylesheet" href="styles.css?v=026f7ebb">
+<link rel="stylesheet" href="styles.css?v=69e81bc8">
+<script>
+// Set before the page paints, so night mode never flashes white.
+(function () {
+  var chosen = null;
+  try { chosen = localStorage.getItem('ce-night'); } catch (e) { /* Nothing was remembered. */ }
+  if (chosen ? chosen === 'on' : matchMedia('(prefers-color-scheme: dark)').matches) document.documentElement.setAttribute('data-night', '');
+})();
+</script>
 </head>
 <body>
 <div id="app" class="rs-app">
   <main class="rs-scroll gut" id="home">
-    <h1>Find it in the Code</h1>
+    <div class="rs-homehead"><h1>Find it in the Code</h1><button class="rs-iconbtn" id="night" type="button"></button></div>
     <form class="rs-lock" id="lock" hidden>
       <label class="f">Password<input class="field" id="password" type="password" autocomplete="current-password"></label>
       <button class="btn" id="unlock">Unlock</button>
@@ -30,10 +38,10 @@
     <label class="btn soft" id="pick" hidden>Choose your Code PDF<input type="file" id="file" accept="application/pdf,.pdf" hidden></label>
     <div class="rs-push"></div>
     <button class="link" id="lockNow" type="button" hidden>Lock my book now</button>
-    <p class="note">Build 026f7ebb</p>
+    <p class="note">Build 69e81bc8</p>
   </main>
   <section class="rs-view" id="result" hidden></section>
 </div>
-<script type="module" src="rules-ui.js?v=026f7ebb"></script>
+<script type="module" src="rules-ui.js?v=69e81bc8"></script>
 </body>
 </html>

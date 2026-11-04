@@ -12,7 +12,11 @@ const LAST_SECTION = 86;
 const sectionLine = (text) => text.replace(/^[\sΔ∆▲△●○■□◆◇*†‡§•]+/u, '').match(SECTION_LINE);
 const BAND = 0.075; // Share of the page at the top and bottom that holds running heads and page numbers.
 
-const stemWord = (w) => (w.length > 3 && w.endsWith('s') && !w.endsWith('ss') ? w.slice(0, -1) : w);
+const stemWord = (w) => {
+  if (w.length <= 3 || !w.endsWith('s') || w.endsWith('ss')) return w;
+  // Boxes, switches and classes lose the whole ending, so they match box, switch and class.
+  return /(?:x|ch|sh|ss)es$/.test(w) ? w.slice(0, -2) : w.slice(0, -1);
+};
 export function wordsOf(text) {
   return String(text).normalize('NFKC').toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean).map(stemWord);
 }

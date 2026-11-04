@@ -1,6 +1,6 @@
 // Saves the finished map of the book so it can open at once, without reading every page again.
 // It holds words from the book, so it is only ever kept on your own devices, never in Git or on a hosted page.
-const VERSION = 1;
+const VERSION = 2;
 
 const pack = (_, value) => {
   if (value instanceof Map) return { $m: [...value] };

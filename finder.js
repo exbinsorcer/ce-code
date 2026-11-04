@@ -1,15 +1,16 @@
 // Turns a question into where to look in the book, following the steps taught in class:
 // key words, definitions, contents, index, rule titles, then any table, note or rule the rule points to.
 // It never decides the answer. It uses the question only, not the answer choices, so it cannot give one away.
-import { parseQuestion } from './engine.js?v=026f7ebb';
-import { wordsOf, compareRules, lookup } from './rules.js?v=026f7ebb';
-import { tablesNamedIn } from './map.js?v=026f7ebb';
+import { parseQuestion } from './engine.js?v=69e81bc8';
+import { wordsOf, compareRules, lookup } from './rules.js?v=69e81bc8';
+import { tablesNamedIn } from './map.js?v=69e81bc8';
 
 const STOP = new Set(`a about above after all also an and any are as at be been being below between both but by can could do does during each every
 for from had has have how i if in into is it its of on onto or our per should so some such than that the their them then there these they this
 those through to under until up upon us was were what when where which while who whom why will with within would you your
 type kind used use using given following correct true false answer question options option required require requires according code ce cec
-choose select best shown state find being let like much many need needs make makes made get rule rules allowed permitted far apart often high big long large small can`.split(/\s+/));
+choose select best shown state find being let like much many need needs make makes made get rule rules allowed permitted far apart often high big long large small can
+designated present installed install needed apply applies mean located`.split(/\s+/));
 
 // Words kept for meaning, and shown to the reader, but not used to find a page.
 const CONDITIONS = ['not', 'no', 'without', 'except', 'unless', 'notwithstanding', 'may', 'must', 'shall', 'only', 'minimum', 'maximum', 'least', 'most', 'more', 'less', 'never', 'always'];
@@ -25,7 +26,7 @@ const BOOK_WORDS = {
   charger: ['charging'], chargers: ['charging'], ev: ['vehicle'], car: ['vehicle'], pull: ['manual'], gfi: ['gfci', 'ground', 'interrupter'], gfci: ['gfci', 'interrupter', 'ground'],
   afci: ['afci', 'arc'], disconnect: ['disconnecting', 'disconnect'], clearance: ['clearance', 'spacing'], derate: ['correction'], derating: ['correction'], tub: ['tub', 'bathtub', 'hydromassage'], sizing: ['size'], sized: ['size'],
   burial: ['cover', 'buried', 'underground'], depth: ['depth', 'cover'], height: ['height', 'clearance'], calculate: ['calculated', 'demand'], calculation: ['calculated', 'demand'], supports: ['support'], supported: ['support'],
-  fit: ['fill', 'number'], classified: ['classification'], classify: ['classification'],
+  fit: ['fill', 'number'], classified: ['classification'], classify: ['classification'], pv: ['photovoltaic'], solar: ['photovoltaic', 'solar'],
 };
 
 const light = (w) => {
@@ -35,6 +36,12 @@ const light = (w) => {
   return w;
 };
 const lightWords = (text) => wordsOf(text).map(light);
+// Small words like "of" say nothing about whether an Index entry or title fits.
+const STOP_WORDS = new Set(lightWords([...STOP].join(' ')));
+const ASKING_WORDS = new Set(['definition', 'definitions', 'define', 'defined', 'meaning']);
+// The general sections, by their numbers in the Contents. Every other section adds to or changes these.
+// tools/check_sections.mjs checks this list against the book's own wording.
+export const GENERAL_SECTIONS = new Set([2, 4, 6, 8, 10, 12, 14, 16, 26]);
 
 const DEFINE = /(?:definition\s+(?:of|for)|define|meaning\s+of|what\s+does|what\s+is\s+meant\s+by|what\s+is\s+an?|what\s+are)\s+(?:the\s+|an?\s+)?["'“]?([\p{L}\p{N} ,-]+?)["'”]?(?:\s+mean)?\s*\??$/iu;
 const LOOKS_LIKE_TABLE = /\b(what\s+size|how\s+big|minimum\s+size|maximum\s+number|how\s+many|ampacity|ampacities|correction\s+factors?|spacing|gauge|awg|rating\s+of|largest|smallest|type\s+of\s+\w*\s*enclosure|enclosure\s+type)\b/i;
@@ -71,6 +78,26 @@ export function negatedWords(stem) {
   return [...out];
 }
 
+// Where the words you are looking for sit in a piece of page text, so they can be marked.
+export function markRanges(text, marks) {
+  const out = [];
+  for (const m of String(text).matchAll(/[\p{L}\p{N}]+/gu)) {
+    const [word] = lightWords(m[0]);
+    if (word && marks.has(word)) out.push({ start: m.index, end: m.index + m[0].length });
+  }
+  return out;
+}
+
+// Hints use the question and the places it leads to. They never look at the answer choices.
+export function hintsFor(f) {
+  const kept = f.keywords.filter((w) => !f.dropped.includes(w));
+  const place = f.places[0];
+  const hints = [['The words that decide it', `${kept.join(', ')}.${f.watch.length ? ` Do not skip: ${f.watch.join(', ')}.` : ''}`]];
+  if (place) hints.push(['Where to read', place.kind === 'table' ? `Table ${place.id}. Find your row first, then your column.` : `Rule ${place.id}. Read it to the end before you choose.`]);
+  hints.push(['Watch out', place?.kind === 'table' ? 'Rows can look alike. Read the whole row name before you read across.' : 'Look for not, except and unless. They change the meaning.']);
+  return hints;
+}
+
 export function prepareFinder(index, map) {
   const ruleBlocks = index.blocks.filter((b) => b.rule);
   const total = ruleBlocks.length + map.index.length + 1;
@@ -85,7 +112,15 @@ export function prepareFinder(index, map) {
     const r = lookup(index, b.rule);
     rules.set(b.rule, { rule: b.rule, words, text: b.text || '', size: words.size, titleWords: new Set(lightWords(r.title || '')), title: r.title, status: r.status, pdfPage: r.pdfPage, appendixB: r.appendixB, section: b.section });
   }
-  const entries = map.index.map((e) => {
+  // The same entry printed twice is one entry with all of its places.
+  const once = new Map();
+  for (const e of map.index) {
+    const key = e.path.join(' > ').toLowerCase();
+    const had = once.get(key);
+    if (!had) once.set(key, { ...e, refs: [...e.refs] });
+    else for (const r of e.refs) if (!had.refs.some((x) => JSON.stringify(x) === JSON.stringify(r))) had.refs.push(r);
+  }
+  const entries = [...once.values()].map((e) => {
     const leaf = new Set(lightWords(e.term));
     const path = new Set(lightWords(e.path.join(' ')));
     addAll(path);
@@ -101,11 +136,35 @@ export function prepareFinder(index, map) {
     r.context = new Set([...here.filter((h) => h.page === r.pdfPage), ...(last ? [last] : [])].flatMap((h) => [...h.words]));
     r.searchWords = new Set([...r.words, ...r.context]);
   }
+  const sections = new Map();
+  for (const h of headings.filter((x) => x.top)) {
+    if (h.section && !/^deleted$/i.test(h.title.trim())) sections.set(h.section, { section: h.section, title: h.title, page: h.page, printed: h.printed, kind: GENERAL_SECTIONS.has(h.section) ? 'general' : 'specific', titleWords: h.words });
+  }
+  // A word in many section titles, like equipment, says nothing about which section you want.
+  const titleCounts = new Map();
+  for (const s of sections.values()) for (const w of s.titleWords) titleCounts.set(w, (titleCounts.get(w) || 0) + 1);
   const defs = map.definitions.map((d) => ({ ...d, words: lightWords(d.term) }));
   for (const d of defs) addAll(d.words);
   const idf = (w) => Math.log(1 + total / (1 + (df.get(w) || 0)));
   const ruleList = [...index.rules.keys()];
-  return { rules, entries, tables, headings, defs, idf, ruleList, tableLabels: [...map.tables.keys()] };
+  const tableLabels = [...map.tables.keys()];
+  const tableByLabel = new Map(tables.map((t) => [t.label, t]));
+  // The words at the places an Index entry leads to. Worked out once, the first time it is needed.
+  const placesOf = (e) => {
+    if (e.places) return e.places;
+    const out = [];
+    for (const ref of e.refs) {
+      if (ref.type === 'rule' && rules.has(ref.rule)) out.push(rules.get(ref.rule).searchWords);
+      if (ref.type === 'range') for (const r of ruleList.filter((k) => compareRules(k, ref.from) >= 0 && compareRules(k, ref.to) <= 0).slice(0, 12)) out.push(rules.get(r)?.searchWords || new Set());
+      if (ref.type === 'table') {
+        const list = ref.to ? tableLabels.slice(tableLabels.indexOf(ref.label), tableLabels.indexOf(ref.to) + 1) : [ref.label];
+        for (const label of list) if (tableByLabel.has(label)) out.push(new Set([...tableByLabel.get(label).words, ...tableByLabel.get(label).bodyWords]));
+      }
+    }
+    e.places = out;
+    return out;
+  };
+  return { rules, entries, tables, headings, defs, idf, ruleList, tableLabels, sections, titleCounts, placesOf };
 }
 
 function expandRange(ready, from, to) {
@@ -127,7 +186,9 @@ export function findInBook(raw, index, map, ready, { dropped = [] } = {}) {
   // Each key word is one idea, whichever of its words the book uses, so one idea is only counted once.
   const ideas = [];
   const bookWords = [];
+  const asked = stem.match(DEFINE)?.[1]?.trim();
   for (const w of keywords) {
+    if (asked && ASKING_WORDS.has(w)) continue;
     const own = lightWords(w);
     const extra = BOOK_WORDS[w] || [];
     const fresh = extra.filter((e) => !own.includes(light(e)));
@@ -136,7 +197,6 @@ export function findInBook(raw, index, map, ready, { dropped = [] } = {}) {
     own.forEach((s, i) => ideas.push({ words: new Set([s, ...(i === 0 ? extra.flatMap((e) => lightWords(e)) : [])]), early }));
   }
   const allWords = new Set(ideas.flatMap((i) => [...i.words]));
-  const asked = stem.match(DEFINE)?.[1]?.trim();
   const defWords = asked ? lightWords(asked) : null;
   const measure = (words) => {
     let sum = 0;
@@ -150,8 +210,32 @@ export function findInBook(raw, index, map, ready, { dropped = [] } = {}) {
       }
     }
     let own = 0;
-    for (const w of words) if (allWords.has(w)) own++;
-    return { sum, reach: ideas.length ? hit / ideas.length : 0, fit: words.size ? own / words.size : 0, hit };
+    let counted = 0;
+    for (const w of words) {
+      if (allWords.has(w)) own++;
+      else if (STOP_WORDS.has(w)) continue;
+      counted++;
+    }
+    return { sum, reach: ideas.length ? hit / ideas.length : 0, fit: counted ? own / counted : 0, hit };
+  };
+  // How much of the question is covered once you follow an Index entry to the place it names.
+  const followed = (e) => {
+    const places = ready.placesOf(e);
+    if (!places.length) return e.refs.some((r) => r.type === 'section' || r.type === 'appendix') ? 0.5 : 0.25;
+    let best = 0;
+    for (const place of places) {
+      let hit = 0;
+      for (const idea of ideas) {
+        for (const w of idea.words) {
+          if (e.pathWords.has(w) || place.has(w)) {
+            hit++;
+            break;
+          }
+        }
+      }
+      best = Math.max(best, ideas.length ? hit / ideas.length : 0);
+    }
+    return best;
   };
 
   /* Index entries */
@@ -163,7 +247,8 @@ export function findInBook(raw, index, map, ready, { dropped = [] } = {}) {
     const s = m.sum * (0.35 + 0.65 * m.fit) * m.reach ** 0.7 * (leafHit ? 1 : 0.5) * (e.refs.length ? 1 : 0.25) * thin;
     return { e, s };
   }).filter((x) => x.s > 0).sort((a, b) => b.s - a.s);
-  const topEntries = entries.slice(0, 12);
+  // An entry is only useful if the place it leads to is about the question, so the best ones are followed and checked.
+  const topEntries = entries.slice(0, 80).map(({ e, s }) => ({ e, s: s * (0.2 + 0.8 * followed(e)) * (asked && e.pathWords.has('definition') ? 1.5 : 1) })).sort((a, b) => b.s - a.s).slice(0, 12);
 
   /* Rules and tables, from the index, the titles, the contents and the text */
   const ruleScore = new Map();
@@ -254,6 +339,62 @@ export function findInBook(raw, index, map, ready, { dropped = [] } = {}) {
 
   const headings = measured.slice(0, 3).map(({ h, s }) => ({ section: h.section, title: h.title, page: h.page, printed: h.printed, top: h.top, score: round(s) }));
 
+  /* General or specific: only the Contents and the Index decide this, the way it is done by hand. No rule is read. */
+  const leaning = new Map();
+  const sure = new Map(); // The key words matched by a heading or Index entry that fits fully and names one section only.
+  const sectionOfRule = (rule) => Number(String(rule).split('-')[0]);
+  const note = (sec, words) => {
+    if (measure(words).fit < 1) return;
+    const had = sure.get(sec) || new Set();
+    ideas.forEach((idea, i) => {
+      for (const w of idea.words) if (words.has(w)) had.add(i);
+    });
+    sure.set(sec, had);
+  };
+  for (const { h, s } of measured.slice(0, 5)) {
+    add(leaning, h.section, h.top ? s * 1.5 : s);
+    note(h.section, h.words);
+  }
+  entries.slice(0, 12).forEach(({ e, s }, i) => {
+    const named = new Set();
+    for (const ref of e.refs) {
+      if (ref.type === 'section') named.add(ref.section);
+      if (ref.type === 'rule') named.add(sectionOfRule(ref.rule));
+      if (ref.type === 'range') named.add(sectionOfRule(ref.from));
+      if (ref.type === 'table' && map.tables.get(ref.label)?.see?.[0]) named.add(sectionOfRule(map.tables.get(ref.label).see[0]));
+    }
+    for (const sec of named) add(leaning, sec, s / (1 + i * 0.15) / Math.sqrt(named.size));
+    if (named.size === 1) note([...named][0], e.pathWords);
+  });
+  const sorted = [...leaning].filter(([sec]) => ready.sections.has(sec)).sort((a, b) => b[1] - a[1]);
+  const strongest = sorted[0]?.[1] || 0;
+  // A specific section only shows when the question is really about that kind of installation.
+  const fits = (sec, s) => {
+    const info = ready.sections.get(sec);
+    if (info.kind === 'general') return true;
+    return ideas.some((idea) => [...idea.words].some((w) => info.titleWords.has(w) && ready.titleCounts.get(w) < 3)) || ((sure.get(sec)?.size || 0) >= 2 && s >= strongest * 0.6);
+  };
+  const kept = sorted.filter(([sec, s]) => s >= strongest * 0.3 && fits(sec, s));
+  const pick = (kind) => kept.filter(([sec]) => ready.sections.get(sec).kind === kind).slice(0, 2).map(([sec]) => {
+    const { section, title, page, printed, kind: k } = ready.sections.get(sec);
+    return { section, title, page, printed, kind: k };
+  });
+  const scope = { lean: kept[0] ? ready.sections.get(kept[0][0]).kind : null, specific: pick('specific'), general: pick('general') };
+
+  /* The places to settle the question: what the best Index entry names, then the best matches */
+  const places = [];
+  const addPlace = (kind, id) => {
+    if (!places.some((p) => p.kind === kind && p.id === id)) places.push({ kind, id });
+  };
+  const bestRefs = topEntries[0]?.e.refs || [];
+  for (const ref of bestRefs) if (ref.type === 'table' && map.tables.has(ref.label)) addPlace('table', ref.label);
+  for (const ref of bestRefs) {
+    if (ref.type === 'rule' && ready.rules.has(ref.rule)) addPlace('rule', ref.rule);
+    if (ref.type === 'range' && ready.rules.has(ref.from)) addPlace('rule', ref.from);
+  }
+  if (tableAsked && rankedTables[0]) addPlace('table', rankedTables[0].label);
+  for (const r of rankedRules.slice(0, 2)) addPlace('rule', r.rule);
+
   /* Which way to go first, and why */
   const named = stem.match(/\b(\d{1,2}-\d{3,4})\b/)?.[1] || null;
   const namedTable = stem.match(/\bTable\s+(D?\d+[A-Z]*)\b/i)?.[1]?.toUpperCase() || null;
@@ -269,8 +410,9 @@ export function findInBook(raw, index, map, ready, { dropped = [] } = {}) {
   return {
     stem, options: parsed.options, keywords: original, dropped: original.filter((w) => dropSet.has(w)), bookWords,
     watch: watchWords(stem), negated: negatedWords(stem), route, definitions: definitions.map((d) => ({ term: d.term, page: d.page, text: d.text, y: d.y, endY: d.endY })),
-    headings,
-    entries: topEntries.slice(0, 5).map(({ e, s }) => ({ path: e.path, refs: e.refs, page: e.page, score: round(s) })),
+    headings, scope, places: places.slice(0, 3), marks: [...allWords],
+    // Entries far behind the best one are left out. The places they name can still show in the list of rules and tables.
+    entries: topEntries.slice(0, 5).filter(({ s }) => s >= topEntries[0].s * 0.4).map(({ e, s }) => ({ path: e.path, refs: e.refs, page: e.page, score: round(s) })),
     rules: rankedRules, tables: rankedTables,
     sections: bestSections.slice(0, 3).map(([section]) => section),
   };
