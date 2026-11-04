@@ -1,8 +1,8 @@
 // Tests each answer choice against the book. Plain code, no AI.
 // It names a choice only when exactly one has the book behind it. Anything else is "not sure", because a wrong answer is far worse.
-import { findInBook } from './finder.js?v=69e81bc8';
-import { wordsOf } from './rules.js?v=69e81bc8';
-import { readTable as readBookTable } from './tables.js?v=69e81bc8';
+import { findInBook } from './finder.js?v=119889a3';
+import { wordsOf } from './rules.js?v=119889a3';
+import { readTable as readBookTable } from './tables.js?v=119889a3';
 
 const JOINING = new Set(['and', 'or', 'of', 'the', 'a', 'an', 'in', 'on', 'to', 'for', 'with', 'use', 'used']);
 const meaningful = (text) => wordsOf(text).filter((w) => !JOINING.has(w));
@@ -12,7 +12,7 @@ const notSure = (...why) => ({ status: 'not-sure', choice: null, evidence: [], w
 export function checkTable(f, table) {
   const asked = new Set(wordsOf(f.stem));
   // The row whose whole name is in the question. When one name sits inside another, the longer one is meant.
-  const fitting = table.rows.map((row) => ({ row, own: meaningful(row.label) })).filter(({ own }) => own.length && own.every((w) => asked.has(w)));
+  const fitting = table.rows.map((row) => ({ row, own: meaningful([...(row.groups || []), row.label].join(' ')) })).filter(({ own }) => own.length && own.every((w) => asked.has(w)));
   if (!fitting.length) return notSure(`No row of Table ${table.label} fits the question.`);
   const longest = Math.max(...fitting.map(({ own }) => own.length));
   const best = fitting.filter(({ own }) => own.length === longest);

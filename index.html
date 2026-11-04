@@ -5,9 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <meta name="theme-color" content="#f6f6f3">
 <title>CE Code</title>
+<meta name="ce-book" content="carried">
 <link rel="icon" href="icons/icon-192.png">
 <link rel="manifest" href="manifest.webmanifest">
-<link rel="stylesheet" href="styles.css?v=69e81bc8">
+<link rel="stylesheet" href="styles.css?v=119889a3">
 <script>
 // Set before the page paints, so night mode never flashes white.
 (function () {
@@ -36,12 +37,13 @@
     </form>
     <p class="rs-grey" id="say" role="status" aria-live="polite"></p>
     <label class="btn soft" id="pick" hidden>Choose your Code PDF<input type="file" id="file" accept="application/pdf,.pdf" hidden></label>
+    <button class="btn soft" id="retry" type="button" hidden>Try again</button>
     <div class="rs-push"></div>
     <button class="link" id="lockNow" type="button" hidden>Lock my book now</button>
-    <p class="note">Build 69e81bc8</p>
+    <p class="note">Build 119889a3</p>
   </main>
   <section class="rs-view" id="result" hidden></section>
 </div>
-<script type="module" src="rules-ui.js?v=69e81bc8"></script>
+<script type="module" src="rules-ui.js?v=119889a3"></script>
 </body>
 </html>

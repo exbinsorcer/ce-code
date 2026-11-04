@@ -3,7 +3,7 @@
 //
 // It uses the text pieces and their positions, plus the thin lines the book draws between cells.
 // When a value could belong to two rows or two columns, the table is marked 'unsure' with the reason. It never guesses.
-import { toItems } from './rules.js?v=69e81bc8';
+import { toItems } from './rules.js?v=119889a3';
 
 // The PDF.js drawing step numbers this file needs. They match the copy in app/vendor/pdfjs.
 const OPS = { save: 10, restore: 11, transform: 12, constructPath: 91, endPath: 28, fills: new Set([20, 21, 22, 23, 24, 25, 26, 27]) };
@@ -20,6 +20,8 @@ const SUPERSCRIPT = { 0: '⁰', 1: '¹', 2: '²', 3: '³', 4: '⁴', 5: '⁵', 6
 const HEADING = /^Table\s+(D?\d+[A-Z]*)(?:\s*\((?:Continued|Concluded)\))?$/;
 const COL_NUMBER = /^Col\.?\s*(\d+)$/i;
 const SNAP = 1.5; // Lines closer than this are the same line.
+// Tables the book no longer has. They are not misreadings, so they are counted on their own.
+const GONE = { deleted: 'the book marks this table as deleted', diagram: 'the book says this table is now a diagram' };
 
 /* ---------- Reading the drawn lines ---------- */
 
@@ -209,7 +211,9 @@ function regionOf(page, label, reasons) {
     }
     body = body.filter((l) => !/^\((?:Continued|Concluded)\)$/.test(l.text));
     if (!body.length) {
-      reasons.push(/^Deleted$/i.test(title) ? 'the book marks this table as deleted' : `nothing under the heading on page ${page.n}`);
+      if (/^Deleted$/i.test(title)) reasons.push(GONE.deleted);
+      else if (/^This Table is now Diagram\s/i.test(title)) reasons.push(GONE.diagram);
+      else reasons.push(`nothing under the heading on page ${page.n}`);
       return null;
     }
     const lo = Math.min(...body.map((l) => l.bottom)) - 4;
@@ -390,6 +394,18 @@ function readPagePart(reg, first, reasons) {
   if (split === tableLines.length) split = 0;
   // A bold line on its own across many columns, boxed off from the headings, names the rows under it.
   while (split > 1 && isGroupLine(reg, cols, tableLines[split - 1]) && (!ruled || hAcross(reg, mid(tableLines[split - 1].tokens[0]), tableLines[split - 1].top - 1, tableLines[split - 2].bottom + 1).length)) split--;
+  // So does a bold row label alone in the first column, under a border that runs the full width of the table.
+  // A border is often drawn in pieces, one per column, so the pieces at one height are put together.
+  const fullRule = (l, above) => {
+    const between = reg.h.filter((r) => r.y > l.top - 1 && r.y < above.bottom + 1);
+    return cluster(between.map((r) => r.y)).some((y) => {
+      const pieces = between.filter((r) => Math.abs(r.y - y) <= SNAP).sort((a, b) => a.x0 - b.x0);
+      let reach = cols[0].x0 + SNAP;
+      for (const r of pieces) if (r.x0 <= reach + 2) reach = Math.max(reach, r.x1);
+      return reach >= cols[cols.length - 1].x1 - SNAP;
+    });
+  };
+  while (ruled && split > 1 && tableLines[split - 1].tokens.every((t) => spanOf(cols, t)?.[1] === 0) && fullRule(tableLines[split - 1], tableLines[split - 2])) split--;
   const headLines = tableLines.slice(0, split);
   const bodyLines = tableLines.slice(split);
   const bodyTop = Math.max(...bodyLines.map((l) => l.top));
@@ -486,7 +502,20 @@ function readRows(part, stub, reasons) {
         continue;
       }
       if (span[0] !== span[1]) {
-        reasons.push(`a value spreads over columns ${span[0] + 1} to ${span[1] + 1} on page ${p}`);
+        // A box drawn across several columns holds one value that counts for each of them, like a merged cell.
+        // The borders must show it: one at each end (or the table's edge), none inside, and every edge inside a real border elsewhere.
+        const inner = cols.slice(span[0] + 1, span[1] + 1);
+        const closed = (i, x) => i === 0 || i === cols.length || vAt(reg, x, t.y);
+        const boxed = inner.every((c) => !c.soft && !vAt(reg, c.x0, t.y)) && closed(span[0], cols[span[0]].x0) && closed(span[1] + 1, cols[span[1]].x1);
+        if (!boxed || span[0] <= stub) {
+          reasons.push(`a value spreads over columns ${span[0] + 1} to ${span[1] + 1} on page ${p}`);
+          continue;
+        }
+        t.span = span;
+        for (let c = span[0]; c <= span[1]; c++) {
+          if (placed.some((pc) => pc.col === c)) reasons.push(`two values share one cell in column ${c + 1} on page ${p}`);
+          placed.push({ col: c, t });
+        }
         continue;
       }
       if (placed.some((pc) => pc.col === span[0])) reasons.push(`two values share one cell in column ${span[0] + 1} on page ${p}`);
@@ -499,36 +528,76 @@ function readRows(part, stub, reasons) {
   const labelMid = (cols[stub].x0 + cols[stub].x1) / 2;
   const cuts = ruled ? cluster(hAcross(reg, labelMid, -Infinity, Infinity).map((r) => r.y)).sort((a, b) => b - a) : [];
   const bandOf = (y) => cuts.filter((c) => c > y).length;
+  // Row labels can nest by indent. A label with no values, whose next label starts further right, heads the rows under it
+  // until a label starts as far left as it does.
+  const labelX = (ln) => Math.min(...ln.placed.filter((pc) => pc.col === stub).map((pc) => pc.t.x0));
+  const labelled = lines.filter((ln) => ln.placed.some((pc) => pc.col === stub));
+  labelled.forEach((ln, i) => {
+    const next = labelled[i + 1];
+    if (next && !ln.placed.some((pc) => pc.col > stub) && labelX(next) > labelX(ln) + 3) ln.heading = true;
+  });
   let group = null;
+  let heads = [];
   const bands = new Map();
   for (const ln of lines) {
     if (ln.group) {
       group = ln.group;
+      heads = [];
       continue;
     }
     if (!ln.placed.length) continue;
+    if (labelled.includes(ln)) heads = heads.filter((h) => h.x < labelX(ln) - 3);
+    if (ln.heading) {
+      heads.push({ x: labelX(ln), text: readText(ln.placed.map((pc) => pc.t.text)).text });
+      continue;
+    }
     const b = bandOf(ln.l.y);
     if (!bands.has(b)) bands.set(b, []);
-    bands.get(b).push({ ...ln, group });
+    bands.get(b).push({ ...ln, group, heads: heads.map((h) => h.text) });
   }
   for (const [b, list] of [...bands].sort((x, y) => x[0] - y[0])) {
     const anchors = list.filter((ln) => ln.placed.some((pc) => pc.col > stub));
     const owners = anchors.length > 1 ? anchors : [list.find((ln) => ln.placed.some((pc) => pc.col > stub)) || list[0]];
-    const made = owners.map((ln) => ({ page: p, group: ln.group, lines: [], band: b }));
-    for (const ln of list) {
-      let k = owners.indexOf(ln);
-      if (k < 0 && owners.length === 1) k = 0;
-      if (k < 0) {
-        // A wrapped line belongs to the row it sits right next to. If it is not clearly closer to one, we cannot tell.
-        const d = owners.map((o) => Math.abs(o.l.y - ln.l.y)).map((x, i) => [x, i]).sort((x, y) => x[0] - y[0]);
-        if (d[0][0] > 1.3 * ln.l.size || d[1][0] < 1.6 * d[0][0]) {
-          reasons.push(`a wrapped line on page ${p} could belong to two rows`);
+    const made = owners.map((ln) => ({ page: p, group: ln.group, heads: ln.heads, lines: [], band: b }));
+    // Wrapped lines between two rows split where the space between lines is clearly widest, as a reader sees it.
+    // Lines before the first row or after the last must run on with ordinary line spacing. Otherwise we cannot tell.
+    const ordered = [...list].sort((x, y) => y.l.y - x.l.y);
+    const rowOf = new Map(owners.map((o, k) => [o, k]));
+    if (owners.length === 1) for (const ln of ordered) rowOf.set(ln, 0);
+    else {
+      const gap = (i) => Math.abs(ordered[i].l.y - ordered[i + 1].l.y);
+      const near = (i) => gap(i) <= 1.3 * Math.max(ordered[i].l.size, ordered[i + 1].l.size);
+      const at = ordered.map((ln, i) => (rowOf.has(ln) ? i : -1)).filter((i) => i >= 0);
+      const unsure = () => reasons.push(`a wrapped line on page ${p} could belong to two rows`);
+      for (let i = at[0] - 1; i >= 0; i--) {
+        if (!near(i)) {
+          unsure();
+          break;
+        }
+        rowOf.set(ordered[i], rowOf.get(ordered[at[0]]));
+      }
+      for (let i = at[at.length - 1] + 1; i < ordered.length; i++) {
+        if (!near(i - 1)) {
+          unsure();
+          break;
+        }
+        rowOf.set(ordered[i], rowOf.get(ordered[at[at.length - 1]]));
+      }
+      for (let k = 0; k + 1 < at.length; k++) {
+        const [from, to] = [at[k], at[k + 1]];
+        if (to - from < 2) continue;
+        const gaps = [];
+        for (let i = from; i < to; i++) gaps.push(gap(i));
+        const widest = gaps.indexOf(Math.max(...gaps));
+        const others = gaps.filter((_, i) => i !== widest);
+        if (!others.every((g, i) => g * 1.3 <= gaps[widest] && near(from + (i < widest ? i : i + 1)))) {
+          unsure();
           continue;
         }
-        k = d[0][1];
+        for (let i = from + 1; i < to; i++) rowOf.set(ordered[i], rowOf.get(ordered[i <= from + widest ? from : to]));
       }
-      made[k].lines.push(ln);
     }
+    for (const ln of list) if (rowOf.has(ln)) made[rowOf.get(ln)].lines.push(ln);
     rows.push(...made);
   }
 
@@ -548,7 +617,7 @@ function readRows(part, stub, reasons) {
       hi = Math.max(...pieces.map((t) => t.top)) + 1;
       lo = Math.min(...pieces.map((t) => t.bottom)) - 1;
     }
-    return { page: p, group: r.group, cells, hi, lo };
+    return { page: p, group: r.group, heads: r.heads, cells, hi, lo };
   });
 
   function owners(r) {
@@ -567,8 +636,14 @@ function readText(texts) {
     words.push(part.text);
     for (const n of part.notes) if (!notes.includes(n)) notes.push(n);
   }
-  // A word broken over two lines, like "Nomi-" and "nal", is joined back. The hyphen stays, because some words keep one.
-  return { text: tidy(words.join(' ')).replace(/(\p{L}) ?- (\p{Ll})/gu, '$1-$2'), notes };
+  // Each piece is its own line. A word broken at a line end, like "Nomi-" and "nal", is joined back with its hyphen,
+  // because some words keep one. Inside a line, "single- and" keeps its space.
+  let text = '';
+  for (const w of words.filter(Boolean)) {
+    if (/\p{L} ?-$/u.test(text) && /^\p{Ll}/u.test(w)) text = `${text.replace(/ -$/, '-')}${w}`;
+    else text = text ? `${text} ${w}` : w;
+  }
+  return { text: tidy(text), notes };
 }
 
 function cellOf(texts, box) {
@@ -600,6 +675,24 @@ function readNotes(lines) {
   return notes;
 }
 
+// When two columns share one drawn box with no border between them, the first holds group names if each band
+// between borders starts with a name there, and the name sits only on the band's top lines, with blanks below it.
+function namesEachBand(part, i, has) {
+  if (!part.cols[i + 1].soft) return false;
+  const cuts = cluster(hAcross(part.reg, mid(part.cols[i + 1]), part.bodyBottom, part.bodyTop).map((r) => r.y));
+  const bands = new Map();
+  for (const l of part.body) {
+    if (!l.tokens.length || isGroupLine(part.reg, part.cols, l)) continue;
+    const b = cuts.filter((c) => c > l.y).length;
+    if (!bands.has(b)) bands.set(b, []);
+    bands.get(b).push(has(l, i));
+  }
+  if (bands.size < 2) return false;
+  // Each band reads like [name, name, blank, blank]: at least one name, then only blanks.
+  return [...bands.values()].every((marks) => marks[0] && marks.indexOf(false) !== -1 && !marks.slice(marks.indexOf(false)).includes(true)
+    || marks.every(Boolean) && marks.length === 1);
+}
+
 // pages: page data from readPageData() in app/viewer.js, one per page the table is on, each with `lines` from readRulings().
 // Without `lines` most tables come back 'unsure', because the borders are what show which box a value is in.
 export function readTable(label, pages) {
@@ -619,6 +712,7 @@ export function readTable(label, pages) {
   }
   if (!parts.length) {
     if (!reasons.length) reasons.push('no pages given');
+    if (reasons.some((r) => r === GONE.deleted || r === GONE.diagram)) result.deleted = true;
     return result;
   }
 
@@ -643,7 +737,7 @@ export function readTable(label, pages) {
     const across = (i) => cluster(hAcross(first.reg, mid(first.cols[i]), first.bodyBottom, first.bodyTop).map((r) => r.y)).length;
     const has = (l, i) => l.tokens.some((t) => spanOf(first.cols, t)?.[0] === i && spanOf(first.cols, t)?.[1] === i);
     const blanks = first.body.some((l) => has(l, stub + 1) && !has(l, stub));
-    if (blanks && across(stub + 1) > across(stub)) stub++;
+    if (blanks && (across(stub + 1) > across(stub) || namesEachBand(first, stub, has))) stub++;
     else break;
   }
 
@@ -692,8 +786,15 @@ export function readTable(label, pages) {
         const { text: labelText, notes } = readText(own[stub].map((t) => t.text));
         if (!labelText) reasons.push(`a row on page ${part.reg.page.n} has values but no label`);
         const cells = {};
-        for (let i = stub + 1; i < width; i++) cells[columns[i].key] = cellOf(own[i], box(at + i));
-        rows.push({ key: `r${rows.length + 1}`, label: labelText, groups: carried ? [carried, ...groups] : groups, notes, page: part.reg.page.n, cells });
+        for (let i = stub + 1; i < width; i++) {
+          // A merged cell gets the box of the whole merged area, and says which columns it covers.
+          const s = own[i].length && own[i].every((t) => t.span) ? own[i][0].span : null;
+          const merged = s && own[i].every((t) => t.span[0] === s[0] && t.span[1] === s[1]) && s[0] >= at && s[1] < at + width;
+          const b = merged ? boxOf(part.reg.dir, part.reg.page.n, part.cols[s[0]].x0, part.cols[s[1]].x1, r.lo, r.hi) : box(at + i);
+          cells[columns[i].key] = cellOf(own[i], b);
+          if (merged) cells[columns[i].key].span = [columns[s[0] - at].key, columns[s[1] - at].key];
+        }
+        rows.push({ key: `r${rows.length + 1}`, label: labelText, groups: [...(carried ? [carried] : []), ...groups, ...r.heads], notes, page: part.reg.page.n, cells });
       }
     }
   }

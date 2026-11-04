@@ -1,13 +1,13 @@
 // The search page. The book is read on this device each time the page opens. No AI.
-import * as store from './store.js?v=69e81bc8';
-import * as viewer from './viewer.js?v=69e81bc8';
-import { createIndexer, lookup, readPage, rulePreview, parseSectionNumber, lookupSection, searchSection } from './rules.js?v=69e81bc8';
-import { createBookMap, lookupTable, parseTableNumber, rulesNamedIn, tablesNamedIn, watchWordsIn } from './map.js?v=69e81bc8';
-import { prepareFinder, findInBook, hintsFor, markRanges } from './finder.js?v=69e81bc8';
-import { checkQuestion } from './checker.js?v=69e81bc8';
-import { TOTAL_PAGES } from './logic.js?v=69e81bc8';
-import { isLockedBook, unlockBook } from './crypt.js?v=69e81bc8';
-import { packBook, unpackBook } from './snapshot.js?v=69e81bc8';
+import * as store from './store.js?v=119889a3';
+import * as viewer from './viewer.js?v=119889a3';
+import { createIndexer, lookup, readPage, rulePreview, parseSectionNumber, lookupSection, searchSection } from './rules.js?v=119889a3';
+import { createBookMap, lookupTable, parseTableNumber, rulesNamedIn, tablesNamedIn, watchWordsIn } from './map.js?v=119889a3';
+import { prepareFinder, findInBook, hintsFor, markRanges } from './finder.js?v=119889a3';
+import { checkQuestion } from './checker.js?v=119889a3';
+import { TOTAL_PAGES } from './logic.js?v=119889a3';
+import { isLockedBook, unlockBook } from './crypt.js?v=119889a3';
+import { packBook, unpackBook } from './snapshot.js?v=119889a3';
 
 const $ = (id) => document.getElementById(id);
 let index = null;
@@ -973,7 +973,7 @@ function askPassword(locked, here) {
   lockedHere = here;
   $('lock').hidden = false;
   $('forgot').hidden = !here;
-  say('Enter your password to open your book.');
+  say(here ? 'Enter your password to open your book.' : 'Enter your password to open your book. You only do this once on each device.');
   $('password').focus();
   $('lock').onsubmit = async (e) => {
     e.preventDefault();
@@ -993,18 +993,19 @@ function askPassword(locked, here) {
     $('forgot').hidden = true;
     $('forgotAsk').hidden = true;
     const blob = new Blob([pdf], { type: 'application/pdf' });
-    // A book locked on this device becomes a normal saved book, so it opens by itself from now on.
-    if (here) {
-      try {
-        await store.kvSet('book', { blob, name: 'Code book' });
-        await store.kvDel('lockedBook');
-        lockedBytes = null;
-      } catch {
-        // It stays locked. Nothing is lost.
-      }
+    // Once it is open, the book is kept on this device, so it opens by itself from now on.
+    let kept = false;
+    try {
+      await store.kvSet('book', { blob, name: 'Code book' });
+      await store.kvDel('lockedBook');
+      store.askToKeep();
+      lockedBytes = null;
+      kept = true;
+    } catch {
+      // It stays locked. Nothing is lost.
     }
     try {
-      await readBook(blob, null, here);
+      await readBook(blob, null, kept);
     } catch {
       say('Your book could not be opened.');
     }
@@ -1049,10 +1050,10 @@ $('lockNow').onclick = async () => {
   askPassword(lockedBytes, lockedHere);
 };
 
+$('retry').onclick = () => location.reload();
+
 async function start() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
-  const served = await fetchBytes('book.enc');
-  if (served && isLockedBook(served)) return askPassword(served, false);
   // In the Android app and on your own PC the book is already here, so nothing needs choosing.
   say('Opening your book');
   const builtIn = await fetchBytes('book.pdf');
@@ -1061,13 +1062,15 @@ async function start() {
     await readBook(new Blob([builtIn], { type: 'application/pdf' }), savedMap ? new TextDecoder().decode(savedMap) : null);
     return undefined;
   }
+  // The web app carries the book, scrambled, so no PDF is ever chosen there.
+  const carried = Boolean(document.querySelector('meta[name=ce-book]'));
   let own = null;
   let saved = null;
   try {
     own = await store.kvGet('lockedBook');
     saved = await store.kvGet('book');
   } catch {
-    // This browser cannot keep anything, so the book is chosen each time.
+    // This browser cannot keep anything, so the book is opened again each time.
   }
   if (own && isLockedBook(own)) return askPassword(own, true);
   if (saved?.blob) {
@@ -1081,10 +1084,27 @@ async function start() {
       await readBook(saved.blob, savedMap, true);
       return undefined;
     } catch {
-      say('Your saved PDF could not be opened. Choose it again.');
-      $('pick').hidden = false;
-      return undefined;
+      if (!carried) {
+        say('Your saved PDF could not be opened. Choose it again.');
+        $('pick').hidden = false;
+        return undefined;
+      }
+      // The copy on this device is damaged, so get the book again.
+      try {
+        await store.kvDel('book');
+        await store.kvDel('bookMap');
+      } catch {
+        // Nothing more can be done here.
+      }
     }
+  }
+  if (carried) say('Getting your book');
+  const served = await fetchBytes('book.enc');
+  if (served && isLockedBook(served)) return askPassword(served, false);
+  if (carried) {
+    say('Your book could not be downloaded. Check your internet, then try again. You only need internet this one time.');
+    $('retry').hidden = false;
+    return undefined;
   }
   say('Choose your Code PDF. You only do this once.');
   $('pick').hidden = false;
