@@ -1,0 +1,826 @@
+// The search page. The book is read on this device each time the page opens. No AI.
+import * as store from './store.js?v=03c292cd';
+import * as viewer from './viewer.js?v=03c292cd';
+import { createIndexer, lookup, readPage, rulePreview, parseSectionNumber, lookupSection, searchSection } from './rules.js?v=03c292cd';
+import { createBookMap, lookupTable, parseTableNumber, rulesNamedIn, tablesNamedIn, watchWordsIn } from './map.js?v=03c292cd';
+import { prepareFinder, findInBook } from './finder.js?v=03c292cd';
+import { TOTAL_PAGES } from './logic.js?v=03c292cd';
+import { isLockedBook, unlockBook } from './crypt.js?v=03c292cd';
+import { packBook, unpackBook } from './snapshot.js?v=03c292cd';
+
+const $ = (id) => document.getElementById(id);
+let index = null;
+let map = null;
+let ready = null;
+let lockedBytes = null; // The scrambled book, kept so the page can lock itself again.
+let lockedHere = false; // True when the locked book was made on this device.
+let views = []; // Where you have been, so Back works from any screen.
+
+const say = (t) => {
+  $('say').textContent = t;
+};
+
+// A saved map of the book opens at once. Without one, every page is read first.
+async function readBook(blob, savedMap = null, remember = false) {
+  const total = await viewer.openBook(blob);
+  const saved = savedMap ? unpackBook(savedMap) : null;
+  if (saved) {
+    index = saved.index;
+    map = saved.map;
+  } else {
+    const ix = createIndexer();
+    const bm = createBookMap();
+    for (let n = 1; n <= total; n++) {
+      const pg = readPage(await viewer.pageData(n));
+      ix.add(pg);
+      bm.add(pg);
+      if (n % 10 === 0 || n === total) {
+        say(`Reading your book: page ${n} of ${total}`);
+        await new Promise((r) => setTimeout(r));
+      }
+    }
+    index = ix.finish();
+    map = bm.finish(index);
+    // Saved on this device, so the book opens at once next time.
+    if (remember) {
+      try {
+        await store.kvSet('bookMap', packBook(index, map));
+      } catch {
+        // No room to keep it. The pages are read again next time.
+      }
+    }
+  }
+  ready = prepareFinder(index, map);
+  say(total === TOTAL_PAGES ? 'Ready. Paste a question, or type a rule, section or table.' : `This file has ${total} pages, not ${TOTAL_PAGES}. It may not be your Code book.`);
+  $('form').hidden = false;
+  $('lockNow').hidden = !lockedBytes;
+  $('q').disabled = false;
+  $('go').disabled = false;
+  $('q').focus();
+}
+
+/* ---------- Small pieces ---------- */
+const PATHS = {
+  back: '<path d="m15 5-7 7 7 7"/>', go: '<path d="m9 5 7 7-7 7"/>', up: '<path d="m5 15 7-7 7 7"/>', down: '<path d="m5 9 7 7 7-7"/>',
+  word: '<path d="M4 4h8l8 8-8 8-8-8z"/><path d="M8.5 8.5h.01"/>', book: '<path d="M4 5c3-1 6-1 8 1 2-2 5-2 8-1v14c-3-1-6-1-8 1-2-2-5-2-8-1z"/><path d="M12 6v14"/>',
+  list: '<path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/>', search: '<circle cx="11" cy="11" r="6"/><path d="m16 16 4 4"/>', rule: '<path d="M6 4h9l3 3v13H6z"/><path d="M9 11h6M9 15h6"/>',
+  table: '<path d="M4 5h16v14H4zM4 10h16M4 15h16M10 5v14"/>', note: '<path d="M5 4h14v12l-4 4H5z"/><path d="M15 20v-4h4M8 9h8M8 13h5"/>', page: '<path d="M6 3h9l4 4v14H6z"/><path d="M15 3v4h4"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>', minus: '<path d="M5 12h14"/>', left: '<path d="M19 12H5M11 6l-6 6 6 6"/>', right: '<path d="M5 12h14M13 6l6 6-6 6"/>',
+};
+function ic(name) {
+  const t = document.createElement('template');
+  t.innerHTML = `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true">${PATHS[name]}</svg>`;
+  return t.content.firstChild;
+}
+const el = (tag, cls, text) => {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text !== undefined) e.textContent = text;
+  return e;
+};
+function tapButton(cls, text, onTap) {
+  const b = el('button', cls, text);
+  b.type = 'button';
+  b.onclick = onTap;
+  return b;
+}
+function row(title, detail, iconName, onTap) {
+  const b = tapButton('row', undefined, onTap);
+  const tile = el('span', 'rs-tile');
+  tile.append(ic(iconName));
+  const t = el('span', 't');
+  t.append(el('b', '', title));
+  if (detail) t.append(el('small', '', detail));
+  b.append(tile, t, ic('go'));
+  return b;
+}
+const listBox = (parent) => {
+  const box = el('div', 'card rows');
+  parent.append(box);
+  return box;
+};
+const chips = (words) => {
+  const d = el('div', 'rs-chips');
+  for (const w of words) d.append(el('span', 'rs-chip dark', w));
+  return d;
+};
+const printedOn = (page) => {
+  const p = index.info.get(page)?.printed;
+  return p?.sure && p.value ? p.value : null;
+};
+const pageWords = (page) => (printedOn(page) ? `PDF ${page} · printed ${printedOn(page)}` : `PDF ${page}`);
+function statsRow(stats) {
+  const d = el('div', 'rs-stats');
+  d.style.gridTemplateColumns = `repeat(${stats.length},1fr)`;
+  for (const [value, label, sure] of stats) {
+    const c = el('div');
+    c.append(el('b', sure === false ? 'rs-unsure' : '', value), el('span', '', label));
+    d.append(c);
+  }
+  return d;
+}
+function topBar(title, right) {
+  const d = el('div', 'rs-top gut');
+  const back = tapButton('rs-iconbtn rs-back', undefined, goBack);
+  back.setAttribute('aria-label', 'Back');
+  back.append(ic('back'));
+  d.append(back, el('b', '', title));
+  if (right) d.append(el('span', '', right));
+  return d;
+}
+const scrollArea = (root) => {
+  const s = el('div', 'rs-scroll gut');
+  root.append(s);
+  return s;
+};
+
+/* ---------- Moving between screens ---------- */
+let drawing = 0;
+let refit = null;
+function open(view) {
+  views.push(view);
+  draw();
+}
+function goBack() {
+  views.pop();
+  draw();
+}
+function draw() {
+  drawing++;
+  refit = null;
+  const root = $('result');
+  root.replaceChildren();
+  $('home').hidden = views.length > 0;
+  root.hidden = !views.length;
+  if (!views.length) return;
+  const v = views[views.length - 1];
+  ({ walk: showWalk, section: showSection, refs: showRefs, missing: showMissing, rule: showItem, table: showItem, note: showItem, definition: showItem, page: showItem })[v.type](root, v);
+}
+
+/* ---------- A question: one step at a time ---------- */
+function stepsFor(f, v) {
+  const steps = [{
+    ask: 'Which words matter?',
+    why: f.keywords.length ? 'Tap a word to leave it out.' : 'I could not pick out any key words. Try other words.',
+    fill(body) {
+      const d = el('div', 'rs-chips');
+      for (const w of f.keywords) {
+        const off = f.dropped.includes(w);
+        const b = tapButton(`rs-chip rs-tap${off ? ' off' : ''}`, w, () => {
+          v.dropped = off ? v.dropped.filter((x) => x !== w) : [...v.dropped, w];
+          draw();
+        });
+        b.setAttribute('aria-pressed', String(!off));
+        d.append(b);
+      }
+      body.append(d);
+      for (const b of f.bookWords) body.append(el('p', 'rs-grey', `"${b.word}": the book may say ${b.book.join(' or ')}.`));
+      if (f.watch.length) {
+        body.append(el('p', 'rs-grey', 'Do not skip these words'), chips(f.watch));
+        if (f.negated.length) body.append(el('p', 'rs-grey', `The question rules out: ${f.negated.join(', ')}.`));
+      }
+    },
+  }];
+  if (f.definitions.length) {
+    steps.push({
+      ask: 'Do you know every word?',
+      why: 'If not, start with Definitions.',
+      fill(body) {
+        const box = listBox(body);
+        for (const d of f.definitions) box.append(row(d.term, pageWords(d.page), 'word', () => open({ type: 'definition', definition: d })));
+      },
+    });
+  }
+  if (map.guides['C9.8'] || map.guides.C11) {
+    steps.push({
+      ask: 'Do you know how the Code uses words?',
+      why: 'Check these two parts if not.',
+      fill(body) {
+        const box = listBox(body);
+        for (const [key, name] of [['C9.8', 'Appendix C, C9.8'], ['C11', 'Appendix C, C11']]) {
+          if (map.guides[key]) box.append(row(name, pageWords(map.guides[key]), 'book', () => open({ type: 'page', page: map.guides[key], name })));
+        }
+      },
+    });
+  }
+  if (f.headings.length) {
+    steps.push({
+      ask: 'Do these headings point to a section?',
+      why: 'These come from the Contents.',
+      fill(body) {
+        const box = listBox(body);
+        for (const h of f.headings) {
+          const name = h.top ? `Section ${h.section}: ${h.title}` : h.title;
+          const where = h.page ? `Section ${h.section} · ${pageWords(h.page)}` : `Section ${h.section}`;
+          box.append(row(name, where, 'list', () => open(h.top || !h.page ? { type: 'section', section: h.section } : { type: 'page', page: h.page, name: h.title, sub: `Section ${h.section}` })));
+        }
+      },
+    });
+  }
+  if (f.entries.length) {
+    steps.push({
+      ask: 'Look up your key words in the Index.',
+      why: 'These entries match.',
+      fill(body) {
+        const box = listBox(body);
+        for (const e of f.entries) box.append(row(e.path.join(' › '), refWords(e.refs), 'search', () => openRef(e)));
+      },
+    });
+  }
+  const places = [...f.tables.slice(0, 3).map((t) => ({ title: `Table ${t.label}`, detail: t.title, icon: 'table', view: { type: 'table', label: t.label } })),
+    ...f.rules.slice(0, 5).map((r) => ({ title: `${r.rule}  ${r.title ?? 'Not sure'}`, detail: `${pageWords(r.pdfPage)}${r.appendixB ? ' · Appendix B' : ''}`, icon: 'rule', view: { type: 'rule', rule: r.rule } }))];
+  steps.push({
+    ask: places.length ? 'Does a title fit?' : 'I could not find a place for this',
+    why: places.length ? 'Check the title first. Read the rule only if it fits.' : 'Try other words, or check the Index by hand.',
+    first: places[0] || null,
+    fill(body) {
+      if (!places.length) return;
+      const box = listBox(body);
+      for (const p of places) box.append(row(p.title, p.detail, p.icon, () => open(p.view)));
+      body.append(el('p', 'rs-small', 'These are places to look, not the answer. Read the rule and decide.'));
+    },
+  });
+  return steps;
+}
+
+function showWalk(root, v) {
+  const f = findInBook(v.text, index, map, ready, { dropped: v.dropped });
+  const steps = stepsFor(f, v);
+  v.at = Math.min(v.at, steps.length - 1);
+  const st = steps[v.at];
+  root.append(topBar('How to find it', `Step ${v.at + 1} of ${steps.length}`));
+  const segs = el('div', 'rs-segs gut');
+  segs.style.gridTemplateColumns = `repeat(${steps.length},1fr)`;
+  steps.forEach((_, i) => segs.append(el('i', i <= v.at ? 'on' : '')));
+  root.append(segs);
+  const body = scrollArea(root);
+  // The whole question stays on screen, because a word like "not" can come last.
+  body.append(el('p', 'rs-grey', f.stem));
+  if (v.at === 0) body.append(el('p', 'rs-route', f.route.why));
+  body.append(el('h2', '', st.ask));
+  if (st.why) body.append(el('p', 'rs-grey', st.why));
+  st.fill(body);
+  const foot = el('div', 'rs-foot gut');
+  const prev = tapButton('btn soft', 'Back', () => {
+    v.at -= 1;
+    draw();
+  });
+  prev.disabled = v.at === 0;
+  foot.append(prev);
+  if (v.at + 1 < steps.length) {
+    foot.append(tapButton('btn rs-next', 'Next', () => {
+      v.at += 1;
+      draw();
+    }));
+  } else if (st.first) foot.append(tapButton('btn', `Open ${st.first.view.type === 'table' ? st.first.title : `Rule ${st.first.view.rule}`}`, () => open(st.first.view)));
+  root.append(foot);
+}
+
+function refWords(refs) {
+  const parts = refs.slice(0, 5).map((r) => ({
+    rule: r.rule, range: `${r.from} to ${r.to}`, table: `Table ${r.label}${r.to ? ` to ${r.to}` : ''}`, section: `Section ${r.section}`, appendix: `Appendix ${r.letter}`, diagram: `Diagram ${r.label}`, see: `See ${r.term}`,
+  }[r.type]));
+  return `${parts.join(', ')}${refs.length > 5 ? ` and ${refs.length - 5} more` : ''}` || 'Sub-entries only';
+}
+
+function openRef(e) {
+  const r = e.refs[0];
+  const asPage = { type: 'page', page: e.page, name: e.path.join(' › '), sub: 'From the Index' };
+  if (!r) return open(asPage);
+  if (e.refs.length > 1 || r.type === 'range' || r.type === 'see') return open({ type: 'refs', entry: e });
+  if (r.type === 'rule') return open({ type: 'rule', rule: r.rule });
+  if (r.type === 'table') return open({ type: 'table', label: r.label });
+  if (r.type === 'section') return open({ type: 'section', section: r.section });
+  return open(asPage);
+}
+
+const num = (rule) => rule.split('-').map(Number);
+function inRange(rule, r) {
+  const [s, n] = num(rule);
+  const [fs, fn] = num(r.from);
+  const [ts, tn] = num(r.to);
+  return s >= fs && s <= ts && (s > fs || n >= fn) && (s < ts || n <= tn);
+}
+
+// One index entry often points to several places.
+function showRefs(root, v) {
+  const e = v.entry;
+  root.append(topBar('From the Index', pageWords(e.page)));
+  const body = scrollArea(root);
+  body.append(el('h2', '', e.path.join(' › ')));
+  const box = listBox(body);
+  const ruleRow = (id) => {
+    const x = lookup(index, id);
+    box.append(row(`${id}  ${x.title ?? ''}`.trim(), x.pdfPage ? pageWords(x.pdfPage) : 'Not found in Sections 0 to 86', 'rule', () => open({ type: 'rule', rule: id })));
+  };
+  for (const r of e.refs) {
+    if (r.type === 'rule') ruleRow(r.rule);
+    else if (r.type === 'range') ready.ruleList.filter((k) => inRange(k, r)).forEach(ruleRow);
+    else if (r.type === 'table') box.append(row(`Table ${r.label}${r.to ? ` to ${r.to}` : ''}`, map.tables.get(r.label)?.title, 'table', () => open({ type: 'table', label: r.label })));
+    else if (r.type === 'section') box.append(row(`Section ${r.section}`, '', 'list', () => open({ type: 'section', section: r.section })));
+    else if (r.type === 'see') box.append(row(`See ${r.term}`, 'Search this word instead', 'search', () => open({ type: 'walk', text: r.term, dropped: [], at: 0 })));
+    else if (r.type === 'appendix') body.append(el('p', 'rs-grey', `Appendix ${r.letter}: open it from the Contents.`));
+  }
+}
+
+function showMissing(root, v) {
+  root.append(topBar(v.name));
+  const body = scrollArea(root);
+  body.append(el('h2', '', v.text));
+  if (v.pages?.length) {
+    body.append(el('p', 'rs-grey', 'This number is mentioned on these pages.'));
+    const box = listBox(body);
+    for (const p of v.pages.slice(0, 12)) box.append(row(pageWords(p), '', 'page', () => open({ type: 'page', page: p, name: v.name })));
+  }
+}
+
+/* ---------- A section ---------- */
+function showSection(root, v) {
+  const s = lookupSection(index, v.section);
+  root.append(topBar(`Section ${v.section}`));
+  const body = scrollArea(root);
+  if (s.status === 'missing') {
+    body.append(el('h2', '', 'This section was not found in the book.'));
+    return;
+  }
+  const host = el('div', 'card rs-host');
+  host.append(el('div', 'rs-num', `Section ${v.section}`), el('div', s.title ? '' : 'rs-unsure', s.title ?? 'Title not sure'));
+  const stats = [[String(s.firstPage), 'First PDF page'], [String(s.lastPage), 'Last PDF page'], [String(s.rules.length), s.rules.length === 1 ? 'Rule' : 'Rules']];
+  host.append(statsRow(stats));
+  body.append(host);
+  if (s.status === 'unsure') body.append(el('p', 'rs-grey', `Not sure: ${s.reasons.join('. ')}. Open the page to check.`));
+  body.append(tapButton('btn soft rs-grow0', `Open first page, PDF ${s.firstPage}`, () => open({ type: 'page', page: s.firstPage, name: `Section ${v.section}`, sub: s.title ?? '' })));
+
+  const form = el('form', 'searchbar');
+  form.autocomplete = 'off';
+  const field = el('input', 'field');
+  field.id = 'sectionWords';
+  field.placeholder = 'Search this section';
+  field.setAttribute('aria-label', `Search words in Section ${v.section}`);
+  field.value = v.words || '';
+  form.append(field, el('button', 'btn soft', 'Search'));
+  body.append(form);
+  const note = el('p', 'rs-grey');
+  note.setAttribute('role', 'status');
+  const box = el('div', 'card rows');
+  body.append(note, box);
+
+  const fill = () => {
+    const text = field.value.trim();
+    v.words = text;
+    let items = s.rules;
+    if (text) {
+      const found = searchSection(index, v.section, text);
+      items = found.hits;
+      note.textContent = found.status === 'none'
+        ? `No rule in Section ${v.section} uses all of those words. Try fewer or different words, or the Index.`
+        : `${items.length} match${items.length === 1 ? '' : 'es'}. Words in a title come first.`;
+    } else note.textContent = s.rules.length ? '' : 'This section has no numbered rules. Search its words above.';
+    box.hidden = !items.length;
+    box.replaceChildren(...items.map((it) => (it.rule
+      ? row(`${it.rule}  ${it.title ?? 'Not sure'}`, `PDF ${it.page || it.pdfPage}${it.appendixB ? ' · Appendix B' : ''}`, 'rule', () => open({ type: 'rule', rule: it.rule }))
+      : row(`PDF ${it.page}`, '', 'page', () => open({ type: 'page', page: it.page, name: `Section ${v.section}` })))));
+  };
+  form.onsubmit = (e) => {
+    e.preventDefault();
+    fill();
+  };
+  fill();
+}
+
+/* ---------- The real page, with a sheet under it ---------- */
+const printedStat = (page) => [printedOn(page) ?? 'None', 'Printed page'];
+
+function itemFor(v) {
+  if (v.type === 'rule') {
+    const r = lookup(index, v.rule);
+    const text = index.blocks.find((b) => b.rule === r.rule)?.text || '';
+    const notes = map.notesByRule.get(r.rule) || [];
+    const tables = tablesNamedIn(text).filter((t) => map.tables.has(t));
+    for (const t of map.tables.values()) if (t.see?.includes(r.rule) && !tables.includes(t.label)) tables.push(t.label);
+    const others = rulesNamedIn(text, r.rule).filter((o) => index.rules.has(o)).slice(0, 8);
+    const elsewhere = r.notesPages.filter((p) => !notes.some((n) => n.page === p));
+    const lines = [];
+    if (r.status !== 'found') lines.push(`Not sure: ${r.reasons.join('. ')}. Check the page.`);
+    if (r.candidates?.length > 1) lines.push(`Headings with this number are on PDF pages ${r.candidates.join(', ')}.`);
+    if (r.appendixB && !notes.length) lines.push('The title points to Appendix B, but I could not find its note. Check Appendix B by hand.');
+    if (elsewhere.length) lines.push(`Also mentioned in Appendix B on PDF page${elsewhere.length === 1 ? '' : 's'} ${elsewhere.join(', ')}.`);
+    return {
+      name: `Rule ${r.rule}`, title: r.title ?? 'Title not sure', home: r.pdfPage, part: rulePreview(index, r.rule), partLabel: 'Rule preview',
+      stats: [printedStat(r.pdfPage), [String(r.pdfPage), 'PDF page'], [r.appendixB === null ? 'Not sure' : r.appendixB ? 'Yes' : 'No', 'Appendix B', r.appendixB !== null]],
+      watch: watchWordsIn(text), lines,
+      points: [
+        ...notes.map((n) => ({ title: `Appendix B: ${n.label}`, detail: `A note, not a rule · ${pageWords(n.page)}`, icon: 'note', view: { type: 'note', note: n } })),
+        ...tables.map((t) => ({ title: `Table ${t}`, detail: map.tables.get(t).title, icon: 'table', view: { type: 'table', label: t } })),
+        ...others.map((o) => ({ title: `Rule ${o}`, detail: lookup(index, o).title, icon: 'rule', view: { type: 'rule', rule: o } })),
+      ],
+    };
+  }
+  if (v.type === 'table') {
+    const t = lookupTable(map, v.label);
+    if (t.status === 'missing') return null;
+    return {
+      name: `Table ${t.label}`, title: t.title || 'Title not sure', home: t.page, partLabel: '', tip: 'Check the row and the column on the page itself. Read the notes under the table too.',
+      stats: [printedStat(t.page), [String(t.page), 'PDF page'], [String(t.see?.length || 0), t.see?.length === 1 ? 'Rule' : 'Rules']],
+      watch: [], lines: [], pages: t.pages?.length > 1 ? t.pages : null,
+      points: (t.see || []).map((r) => ({ title: `Rule ${r}`, detail: lookup(index, r).title, icon: 'rule', view: { type: 'rule', rule: r } })),
+    };
+  }
+  if (v.type === 'note') {
+    const n = v.note;
+    const samePage = n.endPage === n.page && n.endY !== null;
+    return {
+      name: `Appendix B: ${n.label}`, title: 'A note, not a rule. The rule itself is what applies.', badge: 'Note, not a rule', home: n.page, partLabel: 'Note preview',
+      part: { sideways: false, top: n.y, bottom: samePage ? n.endY : null, goesOn: !samePage, x0: 0, x1: index.info.get(n.page)?.columns.right ?? 612 },
+      stats: [printedStat(n.page), [String(n.page), 'PDF page'], [String(n.rules.length), n.rules.length === 1 ? 'Rule' : 'Rules']], watch: [], lines: [],
+      points: n.rules.map((r) => ({ title: `Rule ${r}`, detail: lookup(index, r).title, icon: 'rule', view: { type: 'rule', rule: r } })),
+    };
+  }
+  if (v.type === 'definition') {
+    const d = v.definition;
+    const same = d.endY !== null && d.endY !== undefined;
+    return {
+      name: d.term, title: 'Definition, Section 0', home: d.page, partLabel: 'Definition',
+      part: d.y === undefined ? null : { sideways: false, top: d.y, bottom: same ? d.endY : null, goesOn: !same, x0: 0, x1: index.info.get(d.page)?.columns.right ?? 612 },
+      stats: [printedStat(d.page), [String(d.page), 'PDF page']], watch: [], lines: [], points: [],
+    };
+  }
+  return { name: v.name || `PDF page ${v.page}`, title: v.sub || '', home: v.page, partLabel: '', stats: [printedStat(v.page), [String(v.page), 'PDF page']], watch: [], lines: [], points: [] };
+}
+
+function showItem(root, v) {
+  if (v.type === 'rule') {
+    const r = lookup(index, v.rule);
+    if (r.status === 'missing') {
+      showMissing(root, { name: `Rule ${r.rule}`, text: r.sectionHasRules === false ? `No numbered rules were found in Section ${r.section}.` : 'No rule heading with this number was found.', pages: r.mentionPages });
+      return;
+    }
+  }
+  const info = itemFor(v);
+  if (!info) {
+    showMissing(root, { name: `Table ${v.label}`, text: 'This table was not found in the book.' });
+    return;
+  }
+  if (v.at === undefined) v.at = info.home;
+  if (v.zoom === undefined) v.zoom = 1;
+  const onHome = v.at === info.home;
+  root.append(topBar(`PDF ${v.at}`, info.badge || (printedOn(v.at) ? `Printed ${printedOn(v.at)}` : '')));
+  const main = el('div', 'rs-body');
+  const stage = el('div', 'rs-stage');
+  stage.id = 'pageView';
+  const canvas = el('canvas');
+  canvas.id = 'canvas';
+  canvas.setAttribute('aria-label', `PDF page ${v.at}`);
+  stage.append(canvas);
+
+  const sheet = el('div', 'rs-sheet');
+  const arrow = el('span', 'rs-arrow');
+  arrow.append(ic(v.open ? 'down' : 'up'));
+  const more = el('div', 'rs-more gut');
+  more.hidden = !v.open;
+  const head = tapButton('rs-head gut', undefined, () => {
+    v.open = !v.open;
+    more.hidden = !v.open;
+    arrow.replaceChildren(ic(v.open ? 'down' : 'up'));
+    head.setAttribute('aria-expanded', String(v.open));
+    refit?.();
+  });
+  head.setAttribute('aria-expanded', String(Boolean(v.open)));
+  const t = el('span', 't');
+  t.append(el('b', '', info.name));
+  if (info.title) t.append(el('small', '', info.title));
+  head.append(t, arrow);
+
+  more.append(statsRow(info.stats));
+  for (const line of info.lines) more.append(el('p', 'rs-grey', line));
+  if (info.tip) more.append(el('p', 'rs-route', info.tip));
+  if (info.watch.length) {
+    more.append(el('p', 'rs-grey', 'Read for these words'), chips(info.watch), el('p', 'rs-grey', '"Shall" means you must. "May" means you are allowed to, not that you have to.'));
+  }
+  const preview = el('div', 'rs-preview');
+  preview.hidden = true;
+  const crop = el('canvas');
+  crop.id = 'ruleCanvas';
+  const cropNote = el('p', 'rs-small');
+  preview.append(el('p', 'rs-grey', info.partLabel), crop, cropNote);
+  more.append(preview);
+  if (info.points.length) {
+    more.append(el('p', 'rs-grey', 'Does it point somewhere else?'));
+    const box = listBox(more);
+    for (const p of info.points) box.append(row(p.title, p.detail, p.icon, () => open(p.view)));
+  }
+  if (info.pages) {
+    more.append(el('p', 'rs-grey', 'This table goes over several pages.'));
+    const box = listBox(more);
+    for (const p of info.pages) {
+      box.append(row(pageWords(p), '', 'page', () => {
+        v.at = p;
+        draw();
+      }));
+    }
+  }
+
+  const tools = el('div', 'rs-tools');
+  const tool = (name, label, disabled, onTap) => {
+    const b = tapButton('', undefined, onTap);
+    b.setAttribute('aria-label', label);
+    b.disabled = disabled;
+    b.append(ic(name));
+    tools.append(b);
+    return b;
+  };
+  const turn = (by) => {
+    v.at += by;
+    draw();
+  };
+  tool('left', 'Previous page', v.at <= 1, () => turn(-1));
+  tool('right', 'Next page', v.at >= index.total, () => turn(1));
+  const smaller = tool('minus', 'Smaller', v.zoom <= 1, () => setZoom(v.zoom - 1));
+  const bigger = tool('plus', 'Bigger', v.zoom >= 3, () => setZoom(v.zoom + 1));
+  sheet.append(head, more, tools);
+  main.append(stage, sheet);
+  root.append(main);
+
+  let partSpot = null;
+  // Sizes the page to the space left above the sheet. Nothing ever sits on top of it.
+  const fit = () => {
+    if (!canvas.width || canvas.width <= 300) return;
+    const room = [stage.clientWidth - 16, stage.clientHeight - 16];
+    const ratio = canvas.width / canvas.height;
+    const width = v.zoom === 1 ? Math.min(room[0], room[1] * ratio) : room[0] * (v.zoom === 2 ? 1.6 : 2.5);
+    canvas.style.width = `${Math.round(width)}px`;
+    canvas.style.height = `${Math.round(width / ratio)}px`;
+  };
+  refit = fit;
+  function setZoom(z) {
+    v.zoom = Math.max(1, Math.min(3, z));
+    smaller.disabled = v.zoom <= 1;
+    bigger.disabled = v.zoom >= 3;
+    fit();
+    // Going bigger lands on the rule, not the top of the page.
+    stage.scrollTop = v.zoom > 1 && partSpot !== null ? partSpot * parseFloat(canvas.style.height) - 8 : 0;
+    stage.scrollLeft = 0;
+  }
+
+  (async () => {
+    const mine = drawing;
+    const done = await viewer.drawPage(canvas, v.at, stage.clientWidth || 320, 2);
+    if (!done || mine !== drawing) return;
+    const [left, bottom, right, top] = viewer.pageBox(v.at) || [0, 0, 612, 792];
+    if (onHome && info.part && !info.part.sideways) {
+      const k = canvas.width / (right - left);
+      const x = (info.part.x0 - left) * k;
+      const w = (info.part.x1 - info.part.x0) * k;
+      const y = Math.max(0, (top - info.part.top - 11) * k);
+      const end = info.part.bottom === null ? (top - bottom - 40) * k : (top - info.part.bottom - 10) * k;
+      const h = Math.max(1, end - y);
+      crop.width = Math.round(w);
+      crop.height = Math.round(h);
+      crop.getContext('2d').drawImage(canvas, x, y, w, h, 0, 0, w, h);
+      cropNote.textContent = info.part.goesOn ? 'This may go on past this part. Check the whole page and the next one.' : '';
+      preview.hidden = false;
+      const g = canvas.getContext('2d');
+      g.strokeStyle = '#111214';
+      g.lineWidth = Math.max(2, canvas.width / 300);
+      g.strokeRect(x + 2, y, w - 4, h);
+      partSpot = y / canvas.height;
+    }
+    fit();
+    if (v.zoom > 1) setZoom(v.zoom);
+  })().catch(() => {
+    stage.replaceChildren(el('p', 'rs-grey', 'This page could not be shown. Try opening your book again.'));
+  });
+}
+
+/* ---------- The search box ---------- */
+function searchFor(text) {
+  const asked = parseSectionNumber(text);
+  if (asked !== null) {
+    const s = lookupSection(index, asked);
+    return s.status === 'invalid' ? { type: 'message', text: s.reason } : { type: 'section', section: asked };
+  }
+  const table = parseTableNumber(text);
+  if (table) return { type: 'table', label: table };
+  if (/^\s*\d{1,3}\s*[-‐‑–]\s*\d+\s*$/.test(text)) {
+    const r = lookup(index, text);
+    return r.status === 'invalid' ? { type: 'message', text: r.reason } : { type: 'rule', rule: r.rule };
+  }
+  if (!/\p{L}{2}/u.test(text)) return { type: 'message', text: 'Type a rule like 2-328, a section like 32, a table like Table 65, or paste a question.' };
+  return { type: 'walk', text, dropped: [], at: 0 };
+}
+
+$('form').onsubmit = (e) => {
+  e.preventDefault();
+  if (!index) return;
+  const next = searchFor($('q').value);
+  if (next.type === 'message') {
+    say(next.text);
+    return;
+  }
+  say('Ready. Paste a question, or type a rule, section or table.');
+  views = [];
+  open(next);
+};
+$('q').onkeydown = (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    $('form').requestSubmit();
+  }
+};
+addEventListener('resize', () => refit?.());
+
+/* ---------- Getting the book ---------- */
+// You choose the PDF once. It is kept in this browser on this device, so it opens by itself after that.
+$('file').onchange = async () => {
+  const file = $('file').files[0];
+  if (!file) return;
+  try {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    if (String.fromCharCode(...bytes.subarray(0, 4)) !== '%PDF') {
+      say('That file is not a PDF. Choose your Code PDF.');
+      return;
+    }
+    $('pick').hidden = true;
+    say('Opening your book');
+    const blob = new Blob([bytes], { type: 'application/pdf' });
+    let kept = true;
+    try {
+      await store.kvSet('book', { blob, name: file.name });
+      await store.kvDel('bookMap');
+      store.askToKeep();
+    } catch {
+      kept = false;
+    }
+    await readBook(blob, null, kept);
+    $('changeBook').hidden = !kept;
+    if (!kept) say('There is no room to keep your book here. It is open for now, and you will need to choose it again next time.');
+  } catch {
+    try {
+      await store.kvDel('book');
+    } catch {
+      // Nothing was kept.
+    }
+    say('That PDF could not be opened. Choose your Code PDF.');
+    $('pick').hidden = false;
+  }
+};
+
+// Closes the book and forgets it on this device, so a different file can be chosen. Your own file is not touched.
+$('changeBook').onclick = async () => {
+  views = [];
+  draw();
+  index = null;
+  map = null;
+  ready = null;
+  $('q').value = '';
+  $('q').disabled = true;
+  $('go').disabled = true;
+  $('form').hidden = true;
+  $('changeBook').hidden = true;
+  await viewer.closeBook();
+  try {
+    await store.kvDel('book');
+    await store.kvDel('bookMap');
+  } catch {
+    // Nothing was kept.
+  }
+  $('file').value = '';
+  say('Choose your Code PDF. You only do this once.');
+  $('pick').hidden = false;
+};
+
+async function fetchBytes(name) {
+  try {
+    const res = await fetch(name);
+    if (!res.ok) return null;
+    return new Uint8Array(await res.arrayBuffer());
+  } catch {
+    return null;
+  }
+}
+
+function askPassword(locked, here) {
+  lockedBytes = locked;
+  lockedHere = here;
+  $('lock').hidden = false;
+  $('forgot').hidden = !here;
+  say('Enter your password to open your book.');
+  $('password').focus();
+  $('lock').onsubmit = async (e) => {
+    e.preventDefault();
+    const password = $('password').value;
+    if (!password) return;
+    $('unlock').disabled = true;
+    say('Unlocking');
+    const pdf = await unlockBook(locked, password);
+    $('password').value = '';
+    $('unlock').disabled = false;
+    if (!pdf) {
+      say('That password did not work. Try again.');
+      $('password').focus();
+      return;
+    }
+    $('lock').hidden = true;
+    $('forgot').hidden = true;
+    $('forgotAsk').hidden = true;
+    const blob = new Blob([pdf], { type: 'application/pdf' });
+    // A book locked on this device becomes a normal saved book, so it opens by itself from now on.
+    if (here) {
+      try {
+        await store.kvSet('book', { blob, name: 'Code book' });
+        await store.kvDel('lockedBook');
+        lockedBytes = null;
+      } catch {
+        // It stays locked. Nothing is lost.
+      }
+    }
+    try {
+      await readBook(blob, null, here);
+      $('changeBook').hidden = !here;
+    } catch {
+      say('Your book could not be opened.');
+    }
+  };
+}
+
+$('forgot').onclick = () => {
+  $('forgot').hidden = true;
+  $('lock').hidden = true;
+  $('forgotAsk').hidden = false;
+  say('');
+};
+$('keepBook').onclick = () => {
+  $('forgotAsk').hidden = true;
+  askPassword(lockedBytes, lockedHere);
+};
+$('removeBook').onclick = async () => {
+  try {
+    await store.kvDel('lockedBook');
+  } catch {
+    // Nothing was kept.
+  }
+  lockedBytes = null;
+  $('forgotAsk').hidden = true;
+  say('Choose your Code PDF. You only do this once.');
+  $('pick').hidden = false;
+};
+
+// Closes the book and clears it from the screen. The password is needed to open it again.
+$('lockNow').onclick = async () => {
+  index = null;
+  map = null;
+  ready = null;
+  views = [];
+  draw();
+  $('q').value = '';
+  $('q').disabled = true;
+  $('go').disabled = true;
+  $('form').hidden = true;
+  $('lockNow').hidden = true;
+  await viewer.closeBook();
+  askPassword(lockedBytes, lockedHere);
+};
+
+async function start() {
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+  const served = await fetchBytes('book.enc');
+  if (served && isLockedBook(served)) return askPassword(served, false);
+  // In the Android app and on your own PC the book is already here, so nothing needs choosing.
+  say('Opening your book');
+  const builtIn = await fetchBytes('book.pdf');
+  if (builtIn && String.fromCharCode(...builtIn.subarray(0, 4)) === '%PDF') {
+    const savedMap = await fetchBytes('book-index.json');
+    await readBook(new Blob([builtIn], { type: 'application/pdf' }), savedMap ? new TextDecoder().decode(savedMap) : null);
+    return undefined;
+  }
+  let own = null;
+  let saved = null;
+  try {
+    own = await store.kvGet('lockedBook');
+    saved = await store.kvGet('book');
+  } catch {
+    // This browser cannot keep anything, so the book is chosen each time.
+  }
+  if (own && isLockedBook(own)) return askPassword(own, true);
+  if (saved?.blob) {
+    try {
+      let savedMap = null;
+      try {
+        savedMap = await store.kvGet('bookMap');
+      } catch {
+        // The pages are read instead.
+      }
+      await readBook(saved.blob, savedMap, true);
+      $('changeBook').hidden = false;
+      return undefined;
+    } catch {
+      say('Your saved PDF could not be opened. Choose it again.');
+      $('pick').hidden = false;
+      return undefined;
+    }
+  }
+  say('Choose your Code PDF. You only do this once.');
+  $('pick').hidden = false;
+  return undefined;
+}
+start();

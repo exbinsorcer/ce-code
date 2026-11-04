@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+<meta name="theme-color" content="#f6f6f3">
+<title>CE Code</title>
+<link rel="icon" href="icons/icon-192.png">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="stylesheet" href="styles.css?v=03c292cd">
+</head>
+<body>
+<div id="app" class="rs-app">
+  <main class="rs-scroll gut" id="home">
+    <h1>Find it in the Code</h1>
+    <form class="rs-lock" id="lock" hidden>
+      <label class="f">Password<input class="field" id="password" type="password" autocomplete="current-password"></label>
+      <button class="btn" id="unlock">Unlock</button>
+    </form>
+    <button class="link" id="forgot" type="button" hidden>Forgot your password?</button>
+    <div class="rs-lock" id="forgotAsk" hidden>
+      <p class="rs-grey">This removes the locked book from this device. You will need your PDF again to set a new password.</p>
+      <div class="two"><button class="btn soft" id="keepBook" type="button">Keep it</button><button class="btn" id="removeBook" type="button">Remove it</button></div>
+    </div>
+    <form class="rs-ask" id="form" autocomplete="off" hidden>
+      <div class="card"><textarea id="q" placeholder="Paste a question, or type 2-328, 32 or Table 65" aria-label="Question, rule, section or table" disabled></textarea></div>
+      <button class="btn" id="go" disabled>Find</button>
+    </form>
+    <p class="rs-grey" id="say" role="status" aria-live="polite"></p>
+    <label class="btn soft" id="pick" hidden>Choose your Code PDF<input type="file" id="file" accept="application/pdf,.pdf" hidden></label>
+    <div class="rs-push"></div>
+    <button class="link" id="lockNow" type="button" hidden>Lock my book now</button>
+    <button class="link" id="changeBook" type="button" hidden>Use a different PDF</button>
+    <p class="note">Build 03c292cd</p>
+  </main>
+  <section class="rs-view" id="result" hidden></section>
+</div>
+<script type="module" src="rules-ui.js?v=03c292cd"></script>
+</body>
+</html>
