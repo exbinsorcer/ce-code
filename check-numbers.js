@@ -2,7 +2,7 @@
 // Plain code, no AI, no DOM and no network. It reads the table the way a person does: the table, then the row, then the column.
 // It names a choice only when exactly one table, one row, one column and one choice fit. Anything else is "not sure".
 // It holds no wording or values from the book. Those come from the owner's book at run time.
-import { wordsOf as bookWords } from './rules.js?v=a8290e52';
+import { wordsOf as bookWords } from './rules.js?v=344d272b';
 
 const notSure = (why, extra = {}) => ({ status: 'not-sure', choice: null, evidence: [], why: [why], mistake: null, ...extra });
 

@@ -1,15 +1,15 @@
 // Shared reading for the calculators. Every value comes from the owner's book at run time: table cells through
 // app/tables.js and numbers inside a rule's own wording. If a value cannot be read clearly, the answer is not sure.
 // No values from the book are written here.
-import { splitRule } from '../check-rules.js?v=a8290e52';
-import { sizeKey } from '../check-numbers.js?v=a8290e52';
+import { splitRule } from '../check-rules.js?v=344d272b';
+import { sizeKey } from '../check-numbers.js?v=344d272b';
 
 // Where each calculator reads. Rule and table numbers only, never their contents. The Lead can change these in one place.
 export const PLACES = {
   boxFill: { rule: '12-3034', perConductor: '22', boxes: '23' },
   conduitFill: { rule: '12-910', fill: '8', areas: ['6A', '6B', '6C', '6D', '6E', '6F', '6G', '6H', '6I', '6J', '6K'], conduits: ['9A', '9B', '9C', '9D', '9E', '9F', '9G', '9H'] },
   dwelling: { rule: '8-200' },
-  correction: { ampacity: { copper: '2', aluminum: '4' }, heat: '5A', many: '5C' },
+  correction: { rule: '4-004', ampacity: { copper: '2', aluminum: '4' }, heat: '5A', many: '5C' },
   motor: { conductors: '28-106', overcurrent: '28-200', percent: '29', threePhase: '44', singlePhase: '45', ampacity: { copper: '2', aluminum: '4' } },
 };
 

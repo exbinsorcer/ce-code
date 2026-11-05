@@ -3,7 +3,7 @@
 //
 // It uses the text pieces and their positions, plus the thin lines the book draws between cells.
 // When a value could belong to two rows or two columns, the table is marked 'unsure' with the reason. It never guesses.
-import { toItems } from './rules.js?v=a8290e52';
+import { toItems } from './rules.js?v=344d272b';
 
 // The PDF.js drawing step numbers this file needs. They match the copy in app/vendor/pdfjs.
 const OPS = { save: 10, restore: 11, transform: 12, constructPath: 91, endPath: 28, fills: new Set([20, 21, 22, 23, 24, 25, 26, 27]) };

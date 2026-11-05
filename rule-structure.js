@@ -1,7 +1,7 @@
 // Reads a rule part by its structure: who it is about (subject), what it says (shall, shall not, may, may not),
 // what is required (action), when or where it applies (conditions), and what it leaves out (exceptions).
 // Plain code, no AI. It reads the book's own wording at run time and keeps nothing.
-import { rootOf, rootsOf } from './check-situations.js?v=a8290e52';
+import { rootOf, rootsOf } from './check-situations.js?v=344d272b';
 
 // Everyday words that mean the same thing. General vocabulary only, never anything from one question.
 const SAME = [

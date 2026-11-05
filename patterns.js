@@ -1,7 +1,7 @@
 // The pattern book: the route each of your own questions took through the book, so you can learn the routes by heart.
 // No DOM and no network. It keeps only your question and the route as numbers and your own words, never text from the book.
 // It gives no score, no streak and no new questions.
-import { wordsOf } from './rules.js?v=a8290e52';
+import { wordsOf } from './rules.js?v=344d272b';
 
 // What a question asks for, from its own words. The first that fits wins.
 const ASKS = [
@@ -23,7 +23,7 @@ export function patternOf(found, result = null) {
   // Only the question's own words that led to the Index entry are kept, not the entry's wording.
   const entryWords = entry ? new Set(wordsOf(entry.path.join(' '))) : new Set();
   const indexWords = entry ? found.keywords.filter((k) => wordsOf(k).some((w) => entryWords.has(w))) : [];
-  const proof = result?.status === 'answer' ? result.evidence?.find((e) => e.kind === 'table' || e.kind === 'rule') : null;
+  const proof = result?.status === 'answer' || result?.status === 'worked' ? result.evidence?.find((e) => e.kind === 'table' || e.kind === 'rule') : null;
   const place = proof ? { kind: proof.kind, id: proof.ref } : found.places?.[0] ? { kind: found.places[0].kind, id: found.places[0].id } : null;
   const section = place?.kind === 'rule' ? Number(String(place.id).split('-')[0]) : (found.scope?.[scope]?.[0]?.section ?? null);
   const clear = Boolean(place && indexWords.length);

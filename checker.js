@@ -1,21 +1,21 @@
 // Tests each answer choice against the book. Plain code, no AI.
 // It names a choice only when exactly one has the book behind it. Anything else is "not sure", because a wrong answer is far worse.
-import { findInBook, watchWords, negatedWords } from './finder.js?v=a8290e52';
-import { wordsOf } from './rules.js?v=a8290e52';
-import { readTable as readBookTable } from './tables.js?v=a8290e52';
-import { checkNumbers } from './check-numbers.js?v=a8290e52';
-import { checkRules } from './check-rules.js?v=a8290e52';
-import { checkSituation } from './check-situations.js?v=a8290e52';
-import { checkDefinition } from './check-definitions.js?v=a8290e52';
-import { checkWhichRule } from './check-which-rule.js?v=a8290e52';
-import { checkOutside } from './check-outside.js?v=a8290e52';
-import { explainOthers } from './others.js?v=a8290e52';
-import { checkCalculation } from './calc/check.js?v=a8290e52';
-import { checkRuleWords, rulesFor } from './check-rule-words.js?v=a8290e52';
-import { checkAbout } from './check-about.js?v=a8290e52';
-import { checkRuleStructure } from './check-rule-structure.js?v=a8290e52';
-import { checkNegative } from './check-negative.js?v=a8290e52';
-import { checkDefinitionStatement, checkCombined } from './check-definition-statements.js?v=a8290e52';
+import { findInBook, watchWords, negatedWords } from './finder.js?v=344d272b';
+import { wordsOf } from './rules.js?v=344d272b';
+import { readTable as readBookTable } from './tables.js?v=344d272b';
+import { checkNumbers } from './check-numbers.js?v=344d272b';
+import { checkRules } from './check-rules.js?v=344d272b';
+import { checkSituation } from './check-situations.js?v=344d272b';
+import { checkDefinition } from './check-definitions.js?v=344d272b';
+import { checkWhichRule } from './check-which-rule.js?v=344d272b';
+import { checkOutside } from './check-outside.js?v=344d272b';
+import { explainOthers } from './others.js?v=344d272b';
+import { checkCalculation } from './calc/check.js?v=344d272b';
+import { checkRuleWords, rulesFor } from './check-rule-words.js?v=344d272b';
+import { checkAbout } from './check-about.js?v=344d272b';
+import { checkRuleStructure } from './check-rule-structure.js?v=344d272b';
+import { checkNegative } from './check-negative.js?v=344d272b';
+import { checkDefinitionStatement, checkCombined } from './check-definition-statements.js?v=344d272b';
 
 const JOINING = new Set(['and', 'or', 'of', 'the', 'a', 'an', 'in', 'on', 'to', 'for', 'with', 'use', 'used']);
 const meaningful = (text) => wordsOf(text).filter((w) => !JOINING.has(w));
@@ -27,7 +27,7 @@ export function rated(result) {
   return {
     ...result,
     choice: answer ? result.choice : null,
-    confidence: answer ? result.confidence || 'medium' : null,
+    confidence: answer || result.status === 'worked' ? result.confidence || 'medium' : null,
     because: result.because || (answer ? 'The book backs this choice.' : 'The book does not settle it.'),
     outside: Boolean(result.outside),
     evidence: result.evidence || [],
@@ -143,7 +143,14 @@ function choicesNameColumns(f, table) {
 
 async function checkAll(raw, { index, map, ready, pageData, readTable = readBookTable }) {
   const f = findInBook(raw, index, map, ready);
-  if (f.options.length < 2) return notSure('There are no answer choices to check.');
+  if (f.options.length < 2) {
+    // A math question with no choices can still be worked out.
+    if (readTable && pageData) {
+      const open = await checkCalculation(f, { map, ready, pageData, readTable });
+      if (open.status === 'worked' || open.calculation) return open;
+    }
+    return notSure('There are no answer choices to check.');
+  }
   // A subject the Code never mentions is sent elsewhere before anything else is tried.
   const outside = checkOutside(f, index, map);
   if (outside) return outside;

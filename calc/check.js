@@ -1,14 +1,14 @@
 // Answers math questions with the step-by-step calculators in app/calc/. Plain code, no AI.
 // It reads the inputs from the question's own words. If an input is missing or unclear, or the worked result matches no
 // choice or more than one, it says not sure. Every value comes from the owner's book at run time, never from this file.
-import { wordsOf } from '../rules.js?v=a8290e52';
-import { numbersIn, sizesIn, sizeKey } from '../check-numbers.js?v=a8290e52';
-import { PLACES } from './book.js?v=a8290e52';
-import { boxFill } from './box-fill.js?v=a8290e52';
-import { conduitFill } from './conduit-fill.js?v=a8290e52';
-import { motorCircuit } from './motor.js?v=a8290e52';
-import { dwellingLoad } from './dwelling.js?v=a8290e52';
-import { correctedSize } from './correction.js?v=a8290e52';
+import { wordsOf } from '../rules.js?v=344d272b';
+import { numbersIn, sizesIn, sizeKey } from '../check-numbers.js?v=344d272b';
+import { PLACES } from './book.js?v=344d272b';
+import { boxFill } from './box-fill.js?v=344d272b';
+import { conduitFill } from './conduit-fill.js?v=344d272b';
+import { motorCircuit } from './motor.js?v=344d272b';
+import { dwellingLoad } from './dwelling.js?v=344d272b';
+import { correctedSize, correctedAmpacity } from './correction.js?v=344d272b';
 
 const notSure = (why) => ({ status: 'not-sure', choice: null, confidence: null, because: why, outside: false, evidence: [], why: [why] });
 const COUNT = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12 };
@@ -33,6 +33,73 @@ const numberBefore = (stem, unit) => {
 const material = (stem) => (/\balumin(?:i)?um\b/i.test(stem) ? 'aluminum' : /\bcopper\b/i.test(stem) ? 'copper' : null);
 const temperatures = (stem) => [...String(stem).matchAll(/(\d{2,3})\s*(?:°|º|degrees?\s*)\s*C\b/gi)].map((m) => Number(m[1]));
 
+const GIVEN_SIZE = /\b(?:No\.?\s*|#\s*)(\d{1,4}(?:\/0)?)\b/i;
+const INSULATION = /\b(TW75|TWN75|TW|T90|RW90|RW75|R90|RPV90|TWU75|TWU|RWU90|NMD90)\b/;
+const WORD_COUNT = String.raw`\d{1,2}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve`;
+
+// How many conductors count toward the Table 5C multiplier, from Rule 4-004. Gives { count, say }, or null when it can't be told.
+// A two-wire circuit: both count, because the identified conductor carries the same current. It isn't a neutral.
+// A single-phase three-wire circuit: the neutral carries only the unbalanced current, so it doesn't count.
+// A three-phase four-wire circuit depends on how the loads are connected, so it is left to be read by hand.
+export function conductorCount(stem) {
+  const s = String(stem);
+  const bonding = /\bbonding\b/i.test(s) ? ' A bonding conductor never counts.' : '';
+  const m = s.match(new RegExp(String.raw`\b(${WORD_COUNT})\s+((?:(?:single|three)[- ]phase,?\s+)?(?:two|three|four)[- ]wire(?:,?\s+(?:single|three)[- ]phase)?)\b[^.?]*?\b(?:loads?|circuits?)\b`, 'i'));
+  if (m) {
+    const circuits = countOf(m[1]);
+    const what = m[2].toLowerCase();
+    const three = /three[- ]phase/.test(what);
+    const single = /single[- ]phase/.test(what);
+    if (!circuits) return null;
+    if (/two[- ]wire/.test(what)) return { count: circuits * 2, say: `${circuits} two-wire circuits × 2. The identified conductor carries the same current, so it counts.${bonding}` };
+    if (/three[- ]wire/.test(what) && single) return { count: circuits * 2, say: `${circuits} three-wire circuits × 2. The neutral carries only the unbalanced current, so it doesn't count.${bonding}` };
+    if (/three[- ]wire/.test(what) && three) return { count: circuits * 3, say: `${circuits} three-phase circuits × 3.${bonding}` };
+    return null;
+  }
+  const n = countOf((s.match(new RegExp(String.raw`\b(${WORD_COUNT})\s+(?:[a-z0-9-]+\s+){0,2}conductors\b`, 'i')) || [])[1]);
+  return n ? { count: n, say: null } : null;
+}
+
+// The temperature column: the terminations when the question names them, not the insulation.
+function columnFor(s, ambient) {
+  const term = s.match(/terminat\w*[^.?]*?(\d{2,3})\s*(?:°|º|degrees?\s*)\s*C/i);
+  const code = (s.match(INSULATION) || [])[1];
+  if (term) return { rating: term[1], say: code ? `Use the ${term[1]} °C column for the terminations, not the insulation rating of ${code}.` : `Use the ${term[1]} °C column for the terminations.` };
+  const rating = temperatures(s).filter((t) => String(t) !== String(ambient));
+  return rating.length === 1 ? { rating: String(rating[0]), say: null } : null;
+}
+
+// Copper or aluminum. The insulation alone doesn't say, so copper is assumed and the step says so.
+function metalFor(s) {
+  const named = material(s);
+  if (named) return { material: named, say: null };
+  return INSULATION.test(s) ? { material: 'copper', say: 'The question names no metal, so this uses copper, Table 2. If it is aluminum, the answer changes.' } : null;
+}
+
+// These don't use Tables 2 and 5C as worked here, or the load itself changes, so they stay not sure.
+const OTHER_METHOD = /\b(free air|underground|directly buried|auxiliary gutter|cable tray|voltage drop)\b|(?<!non[- ])\bcontinuous\b/i;
+
+// Why a sizing question has to be worked by hand.
+function handReason(kind, stem) {
+  const s = String(stem);
+  if (kind === 'correction' || kind === 'ampacity') {
+    if (/(?<!non[- ])\bcontinuous\b/i.test(s)) return 'A continuous load changes how the conductor is sized, and this calculator does not do that yet. Work it by hand.';
+    if (OTHER_METHOD.test(s)) return 'This kind of run uses different tables, and this calculator does not do that yet. Work it by hand.';
+    if (/four[- ]wire/i.test(s)) return 'On a three-phase four-wire circuit, whether the neutral counts depends on how the loads are connected. Read Rule 4-004 and work it by hand.';
+  }
+  return 'The question does not give every number the calculator needs, so it has to be worked by hand.';
+}
+
+function sizingCommon(s) {
+  if (OTHER_METHOD.test(s)) return null;
+  const ambient = /\bambient\b/i.test(s) ? (s.match(/ambient[^.?]*?(\d{2,3})\s*(?:°|º|degrees?\s*)\s*C/i) || [])[1] : null;
+  const column = columnFor(s, ambient);
+  const metal = metalFor(s);
+  const counted = conductorCount(s);
+  if (!column || !metal || !counted) return null;
+  return { rating: column.rating, ratingSay: column.say, material: metal.material, materialSay: metal.say, ambient: ambient ? Number(ambient) : null, conductors: counted.count, countSay: counted.say };
+}
+
 // Which calculator a question is for, from its words. Only clear cases are taken.
 export function kindOf(stem) {
   const s = String(stem);
@@ -40,6 +107,10 @@ export function kindOf(stem) {
   if (/\b(conduit|tubing|EMT|raceway)\b/i.test(s) && /\b(fill|fit|trade size)\b/i.test(s) && /\bTW|RW|T90|RPV|R90|TWU|TWN/.test(s)) return 'conduitFill';
   if (/\b(hp|horsepower)\b/i.test(s) && /\bmotor\b/i.test(s)) return 'motor';
   if (/\b(single dwelling|house|dwelling)\b/i.test(s) && /\b(m2|m²|square met)/i.test(s) && /\b(service|feeder|calculated load|minimum load)\b/i.test(s)) return 'dwelling';
+  // Starting from a given size: how much it can carry in that run.
+  if (/\bampacity\b/i.test(s) && GIVEN_SIZE.test(s) && /\b(conduit|raceway|cable|tubing|EMT)\b/i.test(s)) return 'ampacity';
+  // Starting from a load: what size the conductors must be.
+  if (/\bsizes?\b[^.?]*\bconductors?\b|\bconductors?\b[^.?]*\bsizes?\b/i.test(s) && /\b\d+(?:\.\d+)?\s*A\b/.test(s) && /\b(conduit|raceway|cable|tubing|EMT)\b/i.test(s)) return 'correction';
   if (/\bambient\b/i.test(s) || (/\bconductors?\b/i.test(s) && /\b(load|carry)\b/i.test(s) && /\b(raceway|cable)\b/i.test(s) && /\b\d+\s*A\b/.test(s))) return 'correction';
   return null;
 }
@@ -91,11 +162,13 @@ export function inputsFor(kind, stem, map) {
   }
   if (kind === 'correction') {
     const load = numberBefore(s, String.raw`A\b`);
-    const temps = temperatures(s);
-    const ambient = /\bambient\b/i.test(s) ? (s.match(/ambient[^.?]*?(\d{2,3})\s*(?:°|º|degrees?\s*)\s*C/i) || [])[1] : null;
-    const rating = temps.filter((t) => String(t) !== String(ambient));
-    const conductors = countOf((s.match(/\b(\d{1,2}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+(?:[a-z-]+\s+){0,2}conductors\b/i) || [])[1]) || null;
-    return load && rating.length === 1 && material(s) && conductors ? { load, rating: String(rating[0]), ambient: ambient ? Number(ambient) : null, conductors, material: material(s) } : null;
+    const common = sizingCommon(s);
+    return load && common ? { load, ...common } : null;
+  }
+  if (kind === 'ampacity') {
+    const size = (s.match(GIVEN_SIZE) || [])[1];
+    const common = sizingCommon(s);
+    return size && common ? { size, ...common } : null;
   }
   return null;
 }
@@ -107,6 +180,7 @@ function matchChoice(options, kind, out, stem) {
     return bySize(options, out.result.value);
   }
   if (kind === 'correction') return bySize(options, out.result.value);
+  if (kind === 'ampacity') return byNumber(options, out.result.value);
   if (kind === 'boxFill' && /\b(fit|allowed|permitted|enough|large enough)\b/i.test(stem) && options.every((o) => /^(yes|no)\b/i.test(o.text))) {
     const hits = options.filter((o) => /^yes\b/i.test(o.text) === out.fits);
     return hits.length === 1 ? hits[0] : null;
@@ -142,15 +216,16 @@ const TABLES = {
   motor: () => [PLACES.motor.percent, PLACES.motor.threePhase, PLACES.motor.singlePhase, ...Object.values(PLACES.motor.ampacity)],
   dwelling: () => [],
   correction: () => [PLACES.correction.heat, PLACES.correction.many, ...Object.values(PLACES.correction.ampacity)],
+  ampacity: () => [PLACES.correction.heat, PLACES.correction.many, ...Object.values(PLACES.correction.ampacity)],
 };
-const RUN = { boxFill, conduitFill, motor: motorCircuit, dwelling: dwellingLoad, correction: correctedSize };
+const RUN = { boxFill, conduitFill, motor: motorCircuit, dwelling: dwellingLoad, correction: correctedSize, ampacity: correctedAmpacity };
 
 // f: what findInBook found. Gives a result like the other checkers, with the calculator's `steps`, or not sure.
 export async function checkCalculation(f, { map, ready, pageData, readTable }) {
   const kind = kindOf(f.stem);
   if (!kind) return notSure('This is not a kind of math question the calculators take.');
   const input = inputsFor(kind, f.stem, map);
-  if (!input) return { ...notSure('The question does not give every number the calculator needs, so it has to be worked by hand.'), calculation: kind };
+  if (!input) return { ...notSure(handReason(kind, f.stem)), calculation: kind };
   const tables = new Map();
   for (const id of TABLES[kind]()) {
     const info = map.tables.get(id);
@@ -161,6 +236,12 @@ export async function checkCalculation(f, { map, ready, pageData, readTable }) {
   const ctx = { table: (id) => tables.get(id) ?? null, rule: (id) => (ready.rules.get(id) ? { text: ready.rules.get(id).text, page: ready.rules.get(id).pdfPage } : null) };
   const out = RUN[kind](ctx, input);
   if (out.status !== 'done') return { ...notSure(out.why[0]), calculation: kind, steps: [] };
+  const workedWhy = out.steps.map((s) => ({ head: [s.method === 'one' ? 'Method One' : s.method === 'two' ? 'Method Two' : null, s.ref ? `${s.ref.type === 'table' ? 'Table' : 'Rule'} ${s.ref.id}` : null].filter(Boolean).join(' · ') || 'Work it out', say: s.say }));
+  const workedEvidence = out.steps.filter((s) => s.ref).map((s) => ({ kind: s.ref.type, ref: s.ref.id, page: s.ref.page, box: null }));
+  // A question with no choices, like one in the course book: the worked result is the answer, with nothing to match it to.
+  if (f.options.length < 2) {
+    return { status: 'worked', choice: null, confidence: 'medium', because: 'Worked step by step from the book.', outside: false, calculation: kind, steps: out.steps, methods: out.methods || null, given: out.given || null, accept: out.accept || null, result: out.result, evidence: workedEvidence, why: workedWhy, mistake: null };
+  }
   const pick = matchChoice(f.options, kind, out, f.stem);
   if (!pick) return { ...notSure('The worked answer matches no choice, or more than one.'), calculation: kind, steps: out.steps };
   return {
@@ -172,9 +253,11 @@ export async function checkCalculation(f, { map, ready, pageData, readTable }) {
     outside: false,
     calculation: kind,
     steps: out.steps,
+    methods: out.methods || null,
+    given: out.given || null, accept: out.accept || null,
     result: out.result,
-    evidence: out.steps.filter((s) => s.ref).map((s) => ({ kind: s.ref.type, ref: s.ref.id, page: s.ref.page, box: null })),
-    why: out.steps.map((s) => ({ head: s.ref ? `${s.ref.type === 'table' ? 'Table' : 'Rule'} ${s.ref.id}` : 'Work it out', say: s.say })),
+    evidence: workedEvidence,
+    why: workedWhy,
     mistake: null,
   };
 }

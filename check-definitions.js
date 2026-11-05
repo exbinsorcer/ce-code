@@ -1,6 +1,6 @@
 // Answers definition questions by comparing each choice with the definition's own words in Section 0.
 // Plain code, no AI. It names a choice only when exactly one clearly fits. Anything else is "not sure".
-import { rootOf, rootsOf } from './check-situations.js?v=a8290e52';
+import { rootOf, rootsOf } from './check-situations.js?v=344d272b';
 
 const LIGHT = new Set(['a', 'an', 'the', 'of', 'to', 'and', 'or', 'in', 'on', 'for', 'with', 'by', 'is', 'are', 'be', 'that', 'which', 'it', 'its', 'as', 'at', 'from', 'term', 'referred', 'called', 'known', 'would', 'definition', 'means', 'mean', 'code', 'ce', 'when', 'used', 'this']);
 const roots = (text) => rootsOf(text).filter((w) => !LIGHT.has(w)).map(rootOf);

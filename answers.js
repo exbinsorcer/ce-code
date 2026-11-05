@@ -110,6 +110,15 @@ export function pickWords(pick, result) {
   return { picked: `You picked ${pick}`, program: `The program ${verb} ${result.choice}${pick === result.choice ? ' too' : ''}` };
 }
 
+// A worked value in plain words. A conductor size reads as a size, not as "8 AWG or kcmil".
+export function resultWords(result) {
+  if (!result || result.value === null || result.value === undefined) return '';
+  const { value, unit } = result;
+  if (unit !== 'AWG or kcmil') return `${value}${unit ? ` ${unit}` : ''}`;
+  const awg = String(value).includes('/') || Number(value) <= 18;
+  return awg ? `No. ${value} AWG` : `${value} kcmil`;
+}
+
 export function ratingLine(result) {
   const because = String(result?.because || '').trim();
   if (result?.confidence !== 'low' || /teacher/i.test(because)) return because;

@@ -1,18 +1,21 @@
 // The search page. The book is read on this device each time the page opens. No AI.
-import * as store from './store.js?v=a8290e52';
-import * as viewer from './viewer.js?v=a8290e52';
-import { createIndexer, lookup, readPage, rulePreview, parseSectionNumber, lookupSection, searchSection } from './rules.js?v=a8290e52';
-import { createBookMap, lookupTable, parseTableNumber, rulesNamedIn, tablesNamedIn, watchWordsIn } from './map.js?v=a8290e52';
-import { prepareFinder, findInBook, hintsFor, markRanges } from './finder.js?v=a8290e52';
-import { checkQuestion } from './checker.js?v=a8290e52';
-import { openAnswers, matchAnswer, combineAnswers, ratingLine, percentOf, pickWords, PERCENTS } from './answers.js?v=a8290e52';
-import { ruledOutBy } from './others.js?v=a8290e52';
-import { splitQuiz, quizForClaude } from './quizzes.js?v=a8290e52';
-import { GRADED, NEEDED } from './graded.js?v=a8290e52';
-import { patternOf, savePattern, loadPatterns, groupPatterns, deviceStore, drillDeck, noteDrill } from './patterns.js?v=a8290e52';
-import { TOTAL_PAGES } from './logic.js?v=a8290e52';
-import { isLockedBook, unlockBook } from './crypt.js?v=a8290e52';
-import { packBook, unpackBook } from './snapshot.js?v=a8290e52';
+import * as store from './store.js?v=344d272b';
+import * as viewer from './viewer.js?v=344d272b';
+import { createIndexer, lookup, readPage, rulePreview, parseSectionNumber, lookupSection, searchSection } from './rules.js?v=344d272b';
+import { createBookMap, lookupTable, parseTableNumber, rulesNamedIn, tablesNamedIn, watchWordsIn } from './map.js?v=344d272b';
+import { prepareFinder, findInBook, hintsFor, markRanges } from './finder.js?v=344d272b';
+import { checkQuestion } from './checker.js?v=344d272b';
+import { openAnswers, matchAnswer, combineAnswers, ratingLine, percentOf, pickWords, resultWords, PERCENTS } from './answers.js?v=344d272b';
+import { ruledOutBy } from './others.js?v=344d272b';
+import { splitQuiz, quizForClaude } from './quizzes.js?v=344d272b';
+import { GRADED, NEEDED } from './graded.js?v=344d272b';
+import { patternOf, savePattern, loadPatterns, groupPatterns, deviceStore, drillDeck, noteDrill } from './patterns.js?v=344d272b';
+import { TOTAL_PAGES } from './logic.js?v=344d272b';
+import { createSpace } from './space.js?v=344d272b';
+import { KINDS, kindName, guessKind, askedText, routeSteps, CALCULATORS, NEXT, SKIP } from './tree.js?v=344d272b';
+import { SIGNS, MOST_PARTS, newWorking, addPart, checkWorking, bookGoals, judgeRoute, routeScore, replayDeck, newReplay, replayPick, replayDone, NEWS, NEWS_ID, hasNews } from './tree-extras.js?v=344d272b';
+import { isLockedBook, unlockBook } from './crypt.js?v=344d272b';
+import { packBook, unpackBook } from './snapshot.js?v=344d272b';
 
 const $ = (id) => document.getElementById(id);
 let index = null;
@@ -67,9 +70,11 @@ async function readBook(blob, savedMap = null, remember = false) {
   $('lockNow').hidden = !lockedBytes;
   $('q').disabled = false;
   $('go').disabled = false;
+  enterSpace();
   drawTabs();
   resumeSession();
-  if (!views.length) $('q').focus();
+  if (hasNews(newsSeen()) && !tree && !views.length) openNews();
+  else if (!views.length) $('q').focus();
 }
 
 /* ---------- Small pieces ---------- */
@@ -83,6 +88,10 @@ const PATHS = {
   zoom: '<circle cx="11" cy="11" r="6"/><path d="m16 16 4 4M11 8.5v5M8.5 11h5"/>',
   expand: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>', shrink: '<path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/>',
   lock: '<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>', unlock: '<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 7.5-2"/>',
+  undo: '<path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/>', check: '<path d="m5 12.5 4.5 4.5L19 7.5"/>', cross: '<path d="M6 6l12 12M18 6 6 18"/>',
+  spark: '<path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M6 18l2.5-2.5M15.5 8.5 18 6"/>',
+  route: '<circle cx="6" cy="6" r="2"/><circle cx="18" cy="18" r="2"/><path d="M8 6h6a3 3 0 0 1 0 6h-4a3 3 0 0 0 0 6h6"/>',
+  tf: '<path d="m3 12 3 3 5-6"/><path d="m14 9 6 6M20 9l-6 6"/>', calc: '<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 7h8M8.5 12h.01M12 12h.01M15.5 12h.01M8.5 16h.01M12 16h.01M15.5 16h.01"/>',
   plus: '<path d="M12 5v14M5 12h14"/>', minus: '<path d="M5 12h14"/>', left: '<path d="M19 12H5M11 6l-6 6 6 6"/>', right: '<path d="M5 12h14M13 6l6 6-6 6"/>',
 };
 function ic(name) {
@@ -161,10 +170,7 @@ function open(view) {
   draw();
 }
 function goBack() {
-  // In a question, Back goes one step at a time, the same from every Back control. Only the first step leaves.
-  const top = views[views.length - 1];
-  if (top?.type === 'walk' && top.at > 0) top.at -= 1;
-  else views.pop();
+  views.pop();
   draw();
 }
 function draw() {
@@ -178,231 +184,517 @@ function draw() {
   saveSession();
   if (!views.length) {
     applyUpdate();
+    if (tab === 'find') space?.refresh();
     return;
   }
   const v = views[views.length - 1];
-  ({ walk: showWalk, section: showSection, refs: showRefs, missing: showMissing, answer: showAnswer, patterns: showPatterns, drill: showDrill, addquiz: showAddQuiz, rule: showItem, table: showItem, note: showItem, definition: showItem, page: showItem })[v.type](root, v);
+  SCREENS[v.type](root, v);
+}
+const SCREENS = { section: showSection, refs: showRefs, missing: showMissing, patterns: showPatterns, replay: showReplay, addquiz: showAddQuiz, rule: showItem, table: showItem, note: showItem, definition: showItem, page: showItem };
+
+/* ---------- A question: the space tree ---------- */
+// The tree is kept as your picks only. Every box is drawn again from them, so each box lands in the same spot every time.
+// tree: { text, dropped, kind, trail, pick, hints, locked, work, seen, showBook }, plus found and result, which are worked out again and never saved.
+// work: your own working for a math question. seen: place boxes you peeked at and turned down. showBook: the book's path is drawn after Lock it in.
+let tree = null;
+let space = null;
+let rootBox = null;
+
+// The search box becomes the first box in space once the book is open.
+function enterSpace() {
+  if (space) return;
+  rootBox = el('div', 'sp-box sp-q');
+  rootBox.append(el('div', 'sp-tag', 'Your question'), $('form'), $('say'), $('lockNow'));
+  $('space').hidden = false;
+  $('home').classList.add('sp-on');
+  space = createSpace($('space'));
+  $('undo').append(ic('undo'), el('span', '', 'Undo'));
+  $('undo').onclick = undoTree;
+  $('zin').append(ic('plus'));
+  $('zout').append(ic('minus'));
+  $('zfit').append(ic('expand'));
+  $('zin').onclick = () => space.zoomBy(1.25);
+  $('zout').onclick = () => space.zoomBy(0.8);
+  $('zfit').onclick = () => space.fitAll();
+  $('newsBtn').hidden = false;
+  $('newsBtn').prepend(ic('spark'), el('span', 'sp-word', "What's new"));
+  $('newsBtn').setAttribute('aria-label', "What's new");
+  $('newsBtn').onclick = openNews;
+  showNewsDot();
+  drawTree();
+}
+function leaveSpace() {
+  if (!space) return;
+  $('form').before($('say'));
+  $('home').querySelector('.rs-homehead').after($('form'));
+  $('home').querySelector('.rs-push').after($('lockNow'));
+  $('space').hidden = true;
+  $('home').classList.remove('sp-on');
 }
 
-/* ---------- A question: one step at a time ---------- */
-function stepsFor(f, v) {
-  const steps = [{
-    ask: 'Which words matter?',
-    why: f.keywords.length ? 'Tap a word to leave it out.' : 'I could not pick out any key words. Try other words.',
-    fill(body) {
-      const d = el('div', 'rs-chips');
-      for (const w of f.keywords) {
-        const off = f.dropped.includes(w);
-        const b = tapButton(`rs-chip rs-tap${off ? ' off' : ''}`, w, () => {
-          v.dropped = off ? v.dropped.filter((x) => x !== w) : [...v.dropped, w];
-          draw();
-        });
-        b.setAttribute('aria-pressed', String(!off));
-        d.append(b);
-      }
-      body.append(d);
-      if (f.watch.length) {
-        body.append(el('p', 'rs-grey', 'Do not skip these words'), chips(f.watch));
-        if (f.negated.length) body.append(el('p', 'rs-grey', `The question rules out: ${f.negated.join(', ')}.`));
-      }
-    },
-  }];
-  if (f.bookWords.length) {
-    steps.push({
-      ask: 'Does the book use another word?',
-      why: 'Look for the book\'s word when you search.',
-      fill(body) {
-        const card = el('div', 'card');
-        for (const b of f.bookWords) {
-          const line = el('div', 'rs-swap');
-          line.append(el('span', 'rs-chip dark', b.word), el('span', 'rs-grey', 'may be'), ...b.book.map((w) => el('span', 'rs-chip', w)));
-          card.append(line);
-        }
-        body.append(card);
-      },
-    });
-  }
-  if (f.definitions.length) {
-    steps.push({
-      ask: 'Do you know every word?',
-      why: 'If not, start with Definitions.',
-      fill(body) {
-        const box = listBox(body);
-        for (const d of f.definitions) box.append(row(d.term, pageWords(d.page), 'word', () => open({ type: 'definition', definition: d })));
-      },
-    });
-  }
-  const sectionRows = (body, list) => {
-    const box = listBox(body);
-    for (const s of list) box.append(row(`Section ${s.section}: ${s.title}`, s.page ? pageWords(s.page) : '', 'list', () => open({ type: 'section', section: s.section })));
-  };
-  steps.push({
-    ask: 'General or specific?',
-    why: 'Sections 0 to 16 and 26 are general. The rest only add to or change them, so if one fits your question, read it first.',
-    fill(body) {
-      const { specific, general } = f.scope;
-      body.append(el('p', 'rs-small', 'Specific sections'));
-      if (specific.length) sectionRows(body, specific);
-      else body.append(el('p', 'rs-grey', 'None of them match your words.'));
-      body.append(el('p', 'rs-small', 'General sections'));
-      if (general.length) sectionRows(body, general);
-      else body.append(el('p', 'rs-grey', specific.length ? `The general rules still count unless Section ${specific[0].section} changes them.` : 'None stand out. Try the Index next.'));
-      body.append(el('p', 'rs-small', 'Found through the Contents and Index'));
-    },
-  });
-  if (f.headings.length) {
-    steps.push({
-      ask: 'Do these headings point to a section?',
-      why: 'These come from the Contents.',
-      fill(body) {
-        const box = listBox(body);
-        for (const h of f.headings) {
-          const name = h.top ? `Section ${h.section}: ${h.title}` : h.title;
-          const where = h.page ? `Section ${h.section} · ${pageWords(h.page)}` : `Section ${h.section}`;
-          box.append(row(name, where, 'list', () => open(h.top || !h.page ? { type: 'section', section: h.section } : { type: 'page', page: h.page, name: h.title, sub: `Section ${h.section}` })));
-        }
-      },
-    });
-  }
-  if (f.entries.length) {
-    steps.push({
-      ask: 'Look up your key words in the Index.',
-      why: 'These entries match.',
-      fill(body) {
-        const box = listBox(body);
-        for (const e of f.entries) box.append(row(e.path.join(' › '), refWords(e.refs), 'search', () => openRef(e)));
-      },
-    });
-  }
-  const places = [...f.tables.slice(0, 3).map((t) => ({ title: `Table ${t.label}`, detail: t.title, icon: 'table', view: { type: 'table', label: t.label } })),
-    ...f.rules.slice(0, 5).map((r) => ({ title: `${r.rule}  ${r.title ?? 'Not sure'}`, detail: `${pageWords(r.pdfPage)}${r.appendixB ? ' · Appendix B' : ''}`, icon: 'rule', view: { type: 'rule', rule: r.rule } }))];
-  steps.push({
-    ask: places.length ? 'Does a title fit?' : 'I could not find a place for this',
-    why: places.length ? 'Check the title first. Read the rule only if it fits.' : 'Try other words, or check the Index by hand.',
-    first: places[0] || null,
-    fill(body) {
-      if (!places.length) return;
-      const box = listBox(body);
-      for (const p of places) box.append(row(p.title, p.detail, p.icon, () => open(p.view)));
-      body.append(el('p', 'rs-small', 'These are places to look, not the answer. Read the rule and decide.'));
-    },
-  });
-  if (f.options.length >= 2) {
-    steps.push({
-      ask: 'What is your final choice?',
-      final: true,
-      fill(body) {
-        const hints = hintsFor(f);
-        if (v.hints) {
-          const [title, words] = hints[(v.hints - 1) % hints.length];
-          const tint = el('div', 'rs-tint');
-          tint.append(el('b', '', `Hint ${((v.hints - 1) % hints.length) + 1} of ${hints.length}: ${title}`), document.createTextNode(words));
-          body.append(tint);
-        } else body.append(el('p', 'rs-grey', 'Take your time. Go back to the book as often as you like.'));
-        const box = listBox(body);
-        box.setAttribute('role', 'radiogroup');
-        box.setAttribute('aria-label', 'Answer choices');
-        for (const o of f.options) {
-          const b = tapButton('rs-opt', undefined, () => {
-            v.pick = o.letter;
-            for (const other of box.children) other.setAttribute('aria-checked', String(other === b));
-            $('lockIn').disabled = false;
-          });
-          b.setAttribute('role', 'radio');
-          b.setAttribute('aria-checked', String(v.pick === o.letter));
-          b.append(el('span', 'rs-dot'), el('span', '', `${o.letter}) ${o.text}`));
-          box.append(b);
-        }
-      },
-    });
-  }
-  return steps;
+// What the book says about the question. A true or false pick adds the two choices when the question has none.
+function foundFor(t) {
+  const key = `${t.kind}|${t.dropped.join('|')}`;
+  if (t.found && t.foundKey === key) return t.found;
+  const base = findInBook(t.text, index, map, ready, { dropped: t.dropped });
+  t.base = base;
+  t.found = t.kind === 'tf' && !base.options.length ? findInBook(askedText(t.text, 'tf', base), index, map, ready, { dropped: t.dropped }) : base;
+  t.foundKey = key;
+  return t.found;
 }
 
-// The answer stays hidden until you say yes here.
-function askToLock(root, v) {
-  const scrim = el('div', 'rs-scrim');
-  const pop = el('div', 'rs-pop gut');
-  pop.setAttribute('role', 'dialog');
-  pop.setAttribute('aria-modal', 'true');
-  const buttons = el('div', 'rs-foot');
-  const keep = tapButton('btn soft', 'Keep looking', () => scrim.remove());
-  buttons.append(keep, tapButton('btn', 'Yes, show me', () => open({ type: 'answer', text: v.text, pick: v.pick, found: v.found })));
-  pop.append(el('h2', '', `Is ${v.pick} your final answer?`), el('p', 'rs-grey', 'You will see the answer next, so keep looking if you are not sure.'), buttons);
-  scrim.append(pop);
-  root.append(scrim);
-  keep.focus();
+function startTree(text) {
+  tree = { text, dropped: [], kind: null, trail: [], pick: null, hints: 0, locked: false };
+  peek = null;
+  views = [];
+  space?.forget();
+  draw();
+  drawTree('last');
 }
-
-function showWalk(root, v) {
-  const f = findInBook(v.text, index, map, ready, { dropped: v.dropped });
-  v.found = f;
-  const steps = stepsFor(f, v);
-  v.at = Math.min(v.at, steps.length - 1);
-  const st = steps[v.at];
-  root.append(topBar('How to find it', `Step ${v.at + 1} of ${steps.length}`));
-  const segs = el('div', 'rs-segs gut');
-  segs.style.gridTemplateColumns = `repeat(${steps.length},1fr)`;
-  steps.forEach((_, i) => segs.append(el('i', i <= v.at ? 'on' : '')));
-  root.append(segs);
-  const body = scrollArea(root);
-  // The whole question stays on screen, because a word like "not" can come last.
-  body.append(el('p', 'rs-grey', f.stem));
-  if (v.at === 0) body.append(el('p', 'rs-route', f.route.why));
-  body.append(el('h2', '', st.ask));
-  if (st.why) body.append(el('p', 'rs-grey', st.why));
-  st.fill(body);
-  const foot = el('div', 'rs-foot gut');
-  if (st.final) {
-    const hints = hintsFor(f).length;
-    const words = !v.hints ? 'Give me a hint' : v.hints % hints === 0 ? 'First hint again' : 'Next hint';
-    body.append(tapButton('btn soft', words, () => {
-      v.hints = (v.hints || 0) + 1;
-      draw();
-    }));
-    const before = tapButton('btn soft', 'Back', goBack);
-    before.disabled = v.at === 0;
-    foot.append(before);
-    const lock = tapButton('btn', 'Lock it in', () => askToLock(root, v));
-    lock.id = 'lockIn';
-    lock.disabled = !v.pick;
-    foot.append(lock);
-    root.append(foot);
-    return;
-  }
-  const prev = tapButton('btn soft', 'Back', () => {
-    v.at -= 1;
-    draw();
-  });
-  prev.disabled = v.at === 0;
-  foot.append(prev);
-  if (v.at + 1 < steps.length) {
-    foot.append(tapButton('btn rs-next', 'Next', () => {
-      v.at += 1;
-      draw();
-    }));
-  } else if (st.first) foot.append(tapButton('btn', `Open ${st.first.view.type === 'table' ? st.first.title : `Rule ${st.first.view.rule}`}`, () => open(st.first.view)));
-  root.append(foot);
-}
-
-/* ---------- The answer ---------- */
 function startAgain() {
   tab = 'find';
+  tree = null;
+  peek = null;
   views = [];
+  space?.forget();
   draw();
+  drawTree();
+  space?.home();
   $('q').value = '';
   say('Ready. Paste a question, or type a rule, section or table.');
   $('q').focus();
 }
-const placeRow = (kind, id, box) => {
-  if (kind === 'table') {
-    const t = map.tables.get(id);
-    box.append(row(`Table ${id}`, t?.page ? pageWords(t.page) : '', 'table', () => open({ type: 'table', label: id })));
-  } else {
-    const r = lookup(index, id);
-    box.append(row(`Rule ${id}`, r.pdfPage ? pageWords(r.pdfPage) : '', 'rule', () => open({ type: 'rule', rule: id })));
+// Undo, and the phone's Back button, take back your last tap. With nothing left to take back, the question closes.
+function undoTree() {
+  if (!tree) return;
+  if (peek) {
+    closePeek();
+    return;
   }
+  const atWork = tree.kind && routeSteps(foundFor(tree), tree.kind)[tree.trail.length]?.type === 'work';
+  if (atWork && tree.work?.parts.length > 2 && !tree.pick) {
+    tree.work.parts.pop();
+  } else if (tree.locked) {
+    tree.locked = false;
+    tree.result = null;
+  } else if (tree.pick) {
+    tree.pick = null;
+    tree.hints = 0;
+  } else if (tree.trail.length) tree.trail.pop();
+  else if (tree.kind) tree.kind = null;
+  else {
+    startAgain();
+    return;
+  }
+  keepBack();
+  saveSession();
+  drawTree('last');
+}
+function changed(focus = 'last') {
+  peek = null;
+  saveSession();
+  keepBack();
+  drawTree(focus);
+}
+
+/* Boxes */
+const box = (cls, ...kids) => {
+  const d = el('div', `sp-box${cls ? ` ${cls}` : ''}`);
+  d.append(...kids);
+  return d;
 };
+const askPill = (st) => {
+  const d = el('div', 'sp-ask');
+  d.append(el('b', '', st.ask));
+  if (st.why) d.append(el('span', '', st.why));
+  return d;
+};
+// mark: after Lock it in, "yes" or "no" on your pick. book: this is where the book went. note: one short line under it.
+function optBox(title, lines, { icon, on, dim, best, onTap, letter, mark, book, note, cls }) {
+  const b = tapButton(`sp-opt${on ? ' on' : ''}${dim && !book ? ' dim' : ''}${letter ? ' sp-letter' : ''}${book ? ' sp-bookpath' : ''}${cls ? ` ${cls}` : ''}`, undefined, onTap);
+  b.setAttribute('aria-pressed', String(Boolean(on)));
+  if (best) b.append(el('span', 'sp-best', 'Best guess'));
+  if (book) b.append(el('span', 'sp-best', 'Book'));
+  if (on) b.append(markBadge(mark === 'no' ? 'no' : 'yes'));
+  if (icon) b.append(ic(icon));
+  b.append(el('b', '', title));
+  for (const line of lines.filter(Boolean)) b.append(el('small', '', line));
+  if (note) b.append(el('small', `sp-note${mark === 'no' ? ' sp-try' : ''}`, note));
+  return b;
+}
+function markBadge(mark) {
+  const t = el('span', `sp-tick${mark === 'no' ? ' no' : ''}`);
+  t.append(ic(mark === 'no' ? 'cross' : 'check'));
+  t.setAttribute('role', 'img');
+  t.setAttribute('aria-label', mark === 'no' ? 'Not the book\'s way' : 'Yes');
+  return t;
+}
+const placeLines = (p) => [p.tag ? `${p.tag} section` : '', p.extra, p.refs ? refWords(p.refs) : p.page ? pageWords(p.page) : '', p.appendixB ? 'Appendix B' : ''];
+function openPlace(p) {
+  if (p.open.type === 'entry') openRef(p.open.entry);
+  else open(p.open);
+}
+const nextButton = (onTap) => tapButton('btn sp-next', 'Next', onTap);
+
+// One step that is a box of its own: key words, the book's own words, or what a math question gives.
+function stepBox(st, f, current) {
+  const d = box('sp-step', el('div', 'sp-tag', st.ask));
+  const goOn = () => {
+    tree.trail.push(NEXT);
+    changed();
+  };
+  if (st.type === 'words') {
+    d.append(el('p', 'rs-route', f.route.why));
+    if (!f.keywords.length) d.append(el('p', 'rs-grey', 'I could not pick out any key words. Try other words.'));
+    else if (current) d.append(el('p', 'rs-grey', 'Tap a word to leave it out.'));
+    const chipsBox = el('div', 'rs-chips');
+    for (const w of f.keywords) {
+      const off = f.dropped.includes(w);
+      const b = tapButton(`rs-chip rs-tap${off ? ' off' : ''}`, w, () => {
+        tree.dropped = off ? tree.dropped.filter((x) => x !== w) : [...tree.dropped, w];
+        changed(null);
+      });
+      b.setAttribute('aria-pressed', String(!off));
+      b.disabled = !current;
+      chipsBox.append(b);
+    }
+    d.append(chipsBox);
+    if (f.watch.length) {
+      d.append(el('p', 'rs-grey', 'Do not skip these words'), chips(f.watch));
+      if (f.negated.length) d.append(el('p', 'rs-grey', `The question rules out: ${f.negated.join(', ')}.`));
+    }
+  }
+  if (st.type === 'book') {
+    for (const s of st.swaps) {
+      const line = el('div', 'rs-swap');
+      line.append(el('span', 'rs-chip dark', s.word), el('span', 'rs-grey', 'may be'), ...s.book.map((w) => el('span', 'rs-chip', w)));
+      d.append(line);
+    }
+  }
+  if (st.type === 'note') {
+    d.append(el('p', 'rs-grey', st.why));
+    if (st.note) d.append(el('p', 'rs-small', st.note));
+  }
+  if (st.type === 'given') {
+    d.append(el('p', 'rs-grey', st.calculator ? `Calculator: ${CALCULATORS[st.calculator]}` : 'Not sure. The calculators do not take this kind of question, so work it out by hand from the rule.'));
+    if (st.numbers.length) d.append(chips(st.numbers));
+    else d.append(el('p', 'rs-grey', 'The question gives no numbers.'));
+    if (st.calculator) d.append(el('p', 'rs-small', 'After you lock in, the worked steps split into parts.'));
+  }
+  if (current) d.append(nextButton(goOn));
+  return d;
+}
+
+// The last box before the answer. The answer stays hidden until you lock it in.
+function lockBox(f) {
+  const d = box('sp-lock');
+  if (tree.locked) {
+    d.append(el('p', 'rs-grey', tree.pick ? `Locked in: ${tree.pick}.` : 'Locked in.'));
+    return d;
+  }
+  d.append(el('p', 'rs-grey', 'Sure? The answer stays hidden until you lock it in.'));
+  const hints = hintsFor(f);
+  if (tree.hints) {
+    const [title, words] = hints[(tree.hints - 1) % hints.length];
+    const tint = el('div', 'rs-tint');
+    tint.append(el('b', '', `Hint ${((tree.hints - 1) % hints.length) + 1} of ${hints.length}: ${title}`), document.createTextNode(words));
+    d.append(tint);
+  }
+  const words = !tree.hints ? 'Give me a hint' : tree.hints % hints.length === 0 ? 'First hint again' : 'Next hint';
+  d.append(tapButton('btn soft', words, () => {
+    tree.hints += 1;
+    changed(['lock']);
+  }));
+  const lock = tapButton('btn', 'Lock it in', () => {
+    tree.locked = true;
+    tree.result = null;
+    changed();
+    runCheck(tree);
+  });
+  lock.id = 'lockIn';
+  d.append(lock);
+  return d;
+}
+
+/* Your own working, for a math question. You type each part; after Lock it in, each part is ticked for its own sum. */
+const hasAnswer = (r) => r?.status === 'answer' || r?.status === 'worked';
+// The numbers your total is checked against.
+const bookNumber = (r) => {
+  if (!hasAnswer(r)) return null;
+  if (r.accept?.length) return r.accept;
+  return typeof r.result?.value === 'number' ? r.result.value : null;
+};
+const roundish = (n) => (Number.isInteger(n) ? String(n) : String(Math.round(n * 1000) / 1000));
+function numInput(value, label, onType, wide = false) {
+  const i = el('input', `sp-num${wide ? ' wide' : ''}`);
+  i.inputMode = 'decimal';
+  i.autocomplete = 'off';
+  i.value = value ?? '';
+  i.disabled = Boolean(tree?.locked);
+  i.setAttribute('aria-label', label);
+  i.oninput = () => {
+    onType(i.value);
+    saveSession();
+  };
+  return i;
+}
+function workNodes(st, id, parent, current) {
+  if (!tree.work) tree.work = newWorking();
+  const w = tree.work;
+  const marks = tree.locked && tree.result && !tree.result.error ? checkWorking(w, bookNumber(tree.result)) : null;
+  const head = box('sp-step', el('div', 'sp-tag', st.ask), el('p', 'rs-grey', st.why));
+  if (!tree.locked && w.parts.length < MOST_PARTS) {
+    head.append(tapButton('btn soft', 'Add a part', () => {
+      tree.work = addPart(tree.work);
+      changed([`${id}-p${tree.work.parts.length - 1}`, `${id}-total`]);
+    }));
+  }
+  const nodes = [{ id, parent, on: true, el: head }];
+  const partIds = w.parts.map((_, j) => `${id}-p${j}`);
+  w.parts.forEach((p, j) => nodes.push({ id: partIds[j], parent: id, on: true, el: partBox(p, j, marks?.parts[j]) }));
+  const end = `${id}-total`;
+  nodes.push({ id: end, joins: partIds, on: true, el: totalBox(w, marks?.total, current) });
+  return { nodes, end };
+}
+function partBox(p, j, mark) {
+  const d = box('sp-part sp-work');
+  const head = el('div', 'sp-workhead');
+  head.append(el('span', 'sp-tag', `Part ${j + 1}`));
+  if (mark?.mark) head.append(markBadge(mark.mark));
+  const sign = el('select', 'sp-sign');
+  sign.setAttribute('aria-label', `Part ${j + 1} sign`);
+  for (const o of SIGNS) {
+    const opt = el('option', '', o);
+    opt.selected = o === p.op;
+    sign.append(opt);
+  }
+  sign.disabled = tree.locked;
+  sign.onchange = () => {
+    p.op = sign.value;
+    saveSession();
+  };
+  const sum = el('div', 'sp-calc');
+  sum.append(numInput(p.a, `Part ${j + 1} first number`, (v) => { p.a = v; }), sign, numInput(p.b, `Part ${j + 1} second number`, (v) => { p.b = v; }));
+  const answer = el('div', 'sp-calc');
+  answer.append(el('span', 'sp-eq', '='), numInput(p.r, `Part ${j + 1} answer`, (v) => { p.r = v; }, true));
+  d.append(head, sum, answer);
+  if (mark?.mark === 'no' && mark.want !== null) d.append(el('p', 'rs-small', `${p.a} ${p.op} ${p.b} = ${roundish(mark.want)}`));
+  return d;
+}
+function totalBox(w, mark, current) {
+  const d = box('sp-total sp-work');
+  const head = el('div', 'sp-workhead');
+  head.append(el('span', 'sp-tag', 'Your total'));
+  if (mark === 'yes' || mark === 'no') head.append(markBadge(mark));
+  if (mark === 'unsure') head.append(el('span', 'sp-unsure', 'Not sure'));
+  const line = el('div', 'sp-calc');
+  line.append(numInput(w.total, 'Your total', (v) => { w.total = v; }, true));
+  d.append(head, line);
+  if (mark === 'unsure') d.append(el('p', 'rs-small', 'The book gave no worked number to check it against.'));
+  if (current) {
+    d.append(nextButton(() => {
+      tree.trail.push(NEXT);
+      changed();
+    }));
+  }
+  return d;
+}
+function markLine(mark, words, value) {
+  const line = el('div');
+  line.append(mark ? markBadge(mark) : el('span', 'sp-blankmark'), el('span', '', words));
+  if (value) line.append(el('b', '', value));
+  return line;
+}
+function workSummary(w, r) {
+  const c = checkWorking(w, bookNumber(r));
+  const d = el('div', 'sp-check');
+  d.append(el('p', 'rs-small', 'Your working'));
+  const lines = el('div', 'sp-lines');
+  w.parts.forEach((p, j) => {
+    if (![p.a, p.b, p.r].some((x) => String(x).trim())) return;
+    lines.append(markLine(c.parts[j].mark, `Part ${j + 1}: ${p.a || '?'} ${p.op} ${p.b || '?'}`, p.r || '—'));
+  });
+  lines.append(markLine(c.total === 'unsure' ? null : c.total, 'Your total', c.total === 'unsure' ? `${w.total} · Not sure` : w.total || '—'));
+  d.append(lines);
+  const book = bookNumber(r);
+  if (book !== null) d.append(el('p', 'rs-grey', `The book's worked answer: ${resultWords({ ...r.result, value: typeof r.result.value === 'number' ? roundish(r.result.value) : r.result.value })}.`));
+  return d;
+}
+
+/* The route check, after Lock it in: each pick on your path gets a tick or a cross. */
+const seeRules = (label) => map.tables.get(label)?.see || [];
+function routeMarks(steps) {
+  if (!tree.locked || !tree.result || tree.result.error) return null;
+  return judgeRoute(steps, tree.trail, bookGoals(tree.result, seeRules));
+}
+function routeSummary(steps, judged) {
+  const d = el('div', 'sp-check');
+  d.append(el('p', 'rs-small', 'Your route'));
+  if (!judged) {
+    d.append(el('p', 'rs-grey', 'Not sure which way the book went, so your route is not checked.'));
+    return d;
+  }
+  if (!judged.length) {
+    d.append(el('p', 'rs-grey', 'You picked no places on the way, so there is nothing to check.'));
+    return d;
+  }
+  const lines = el('div', 'sp-lines');
+  for (const s of judged) {
+    const st = steps[s.i];
+    const mine = s.picked === SKIP ? st.skip : st.places[Number(s.picked)]?.title ?? '';
+    lines.append(markLine(s.mark, mine, s.mark === 'no' && s.book !== null ? `Book: ${st.places[Number(s.book)].title}` : s.mark ? '' : 'Not sure'));
+  }
+  const { right, of } = routeScore(judged);
+  d.append(lines, el('p', 'rs-grey', of ? `${right} of ${of} step${of === 1 ? '' : 's'} went the book's way.` : 'Not sure which steps the book took.'));
+  const scope = judged.find((s) => s.id === 'scope' && s.mark === 'no');
+  if (scope && steps[scope.i].places[Number(scope.picked)]?.tag === 'General' && steps[scope.i].places[Number(scope.book)]?.tag === 'Specific') {
+    d.append(el('p', 'rs-grey', 'A specific section comes first when one fits.'));
+  }
+  if (judged.some((s) => s.mark === 'no')) {
+    d.append(tapButton('btn soft', tree.showBook === false ? "Show the book's path" : "Hide the book's path", () => {
+      tree.showBook = tree.showBook === false;
+      changed(null);
+    }));
+  }
+  return d;
+}
+
+/* Peeking at a page: it slides up over the tree, which stays right behind it. Never saved. */
+let peek = null; // { i, key, p, current, full }
+let peekDraw = 0;
+function openPeek(i, key, p, current) {
+  peek = { i, key, p, current, full: false };
+  drawPeek();
+}
+function closePeek() {
+  peek = null;
+  drawPeek();
+}
+function drawPeek() {
+  const host = $('space');
+  host.querySelector('.sp-peek')?.remove();
+  const mine = ++peekDraw;
+  if (!peek) return;
+  const { p } = peek;
+  const sheet = el('div', 'sp-peek');
+  sheet.setAttribute('role', 'dialog');
+  sheet.setAttribute('aria-label', `The page for ${p.title}`);
+  const handle = tapButton('sp-handle', undefined, () => {
+    peek.full = !peek.full;
+    sheet.classList.toggle('full', peek.full);
+    handle.setAttribute('aria-label', peek.full ? 'Show less of the page' : 'Show the whole page');
+  });
+  handle.setAttribute('aria-label', 'Show the whole page');
+  const head = el('div', 'sp-peekhead');
+  head.append(el('p', 'rs-grey', `${p.title} · ${pageWords(p.page)}`), el('h2', '', p.extra || p.title));
+  const paper = el('div', 'sp-paper');
+  paper.id = 'peekView';
+  const canvas = el('canvas');
+  canvas.id = 'peekCanvas';
+  canvas.setAttribute('aria-label', `PDF page ${p.page}`);
+  paper.append(canvas);
+  const buttons = el('div', 'two');
+  if (peek.current) {
+    buttons.append(tapButton('btn soft', 'Not this one', () => {
+      tree.seen = [...new Set([...(tree.seen || []), `${peek.i}-${peek.key}`])];
+      changed(null);
+    }), tapButton('btn', 'It fits', () => {
+      tree.trail.push(peek.key);
+      changed();
+    }));
+  } else buttons.append(tapButton('btn soft', 'Close', closePeek));
+  const whole = tapButton(peek.current ? 'link' : 'btn', 'Open the full page', () => {
+    const was = peek.p;
+    closePeek();
+    openPlace(was);
+  });
+  if (peek.current) sheet.append(handle, head, paper, buttons, whole);
+  else {
+    buttons.append(whole);
+    sheet.append(handle, head, paper, buttons);
+  }
+  host.append(sheet);
+  (async () => {
+    await new Promise((r) => requestAnimationFrame(r));
+    const part = p.open.type === 'rule' ? rulePreview(index, p.open.rule) : null;
+    const usable = part && !part.sideways && part.page === p.page ? part : null;
+    // A rule is drawn so its own column fills the width, like the zoomed-in page.
+    const zoom = usable ? Math.min(2.5, Math.max(1, 612 / Math.max(120, usable.x1 - usable.x0))) : 1;
+    const done = await viewer.drawPage(canvas, p.page, (paper.clientWidth || 340) - 16, zoom);
+    if (!done || mine !== peekDraw) return;
+    const words = await viewer.pageItems(p.page);
+    if (mine !== peekDraw) return;
+    const marks = tree?.found ? new Set(tree.found.marks) : null;
+    if (marks?.size) markWords(canvas, p.page, words, marks);
+    const [left, , right, top] = viewer.pageBox(p.page) || [0, 0, 612, 792];
+    const k = parseFloat(canvas.style.width) / (right - left);
+    const y = usable ? usable.top : p.open.type === 'definition' ? p.open.definition.y : null;
+    if (usable) paper.scrollLeft = Math.max(0, (usable.x0 - left) * k - 8);
+    if (y !== null && y !== undefined) paper.scrollTop = Math.max(0, (top - y - 14) * k);
+    paper.dataset.ready = '1';
+  })().catch(() => {
+    paper.replaceChildren(el('p', 'rs-grey', 'This page could not be shown here. Tap Open the full page.'));
+  });
+}
+
+/* What's new: a button in the top bar, with a dot until you have seen it. It opens by itself once after an update. */
+const NEWS_SEEN = 'ce-news';
+function newsSeen() {
+  try {
+    return localStorage.getItem(NEWS_SEEN);
+  } catch {
+    return NEWS_ID;
+  }
+}
+function showNewsDot() {
+  $('newsDot').hidden = !hasNews(newsSeen());
+}
+// The sheet adds no step to the phone's Back history, since a page reload would keep that step. Back still closes it when Back is caught.
+function closeNews() {
+  $('app').querySelector('.sp-layer')?.remove();
+}
+function openNews() {
+  try {
+    localStorage.setItem(NEWS_SEEN, NEWS_ID);
+  } catch {
+    // It shows again next time. Nothing else changes.
+  }
+  showNewsDot();
+  $('app').querySelector('.sp-layer')?.remove();
+  const layer = el('div', 'sp-layer');
+  layer.onclick = (e) => {
+    if (e.target === layer) closeNews();
+  };
+  const sheet = el('div', 'sp-sheet');
+  sheet.setAttribute('role', 'dialog');
+  sheet.setAttribute('aria-label', "What's new");
+  sheet.append(el('span', 'sp-grip'), el('h2', '', "What's new"));
+  const list = el('div', 'sp-news');
+  for (const n of NEWS) {
+    const item = el('div', 'sp-newsitem');
+    const tile = el('span', 'rs-tile');
+    tile.append(ic(n.icon));
+    const t = el('span', 't');
+    t.append(el('b', '', n.title), el('small', '', n.say));
+    item.append(tile, t, tapButton('sp-show', 'Show me', () => {
+      closeNews();
+      showMe(n);
+    }));
+    list.append(item);
+  }
+  const done = tapButton('btn', 'Got it', closeNews);
+  done.id = 'newsDone';
+  sheet.append(list, done);
+  layer.append(sheet);
+  $('app').append(layer);
+}
+// "Show me" goes to the tab where the change lives, with one line on how to reach it.
+function showMe(n) {
+  views = [];
+  tab = n.tab;
+  draw();
+  toast(n.tip);
+}
 
 // The answer list researched by hand, opened with the book on this device. Missing pieces mean no list, never an error.
 let answerList;
@@ -421,172 +713,347 @@ async function answerListHere() {
   }
   return answerList;
 }
+async function runCheck(t) {
+  if (t.checking) return;
+  t.checking = true;
+  try {
+    const f = foundFor(t);
+    const checked = await checkQuestion(askedText(t.text, t.kind, t.base), { index, map, ready, pageData: viewer.tablePage });
+    const list = await answerListHere();
+    t.result = combineAnswers(checked, list ? matchAnswer(f, list) : null);
+    // The route is kept on this device for the pattern book. It never holds the book's own words.
+    deviceStore().then((kv) => savePattern(kv, f.stem, patternOf(f, t.result))).catch(() => {});
+  } catch {
+    t.result = { error: true };
+  }
+  t.checking = false;
+  if (tree === t && t.locked) drawTree('last');
+}
 
 // The percent in words and one plain line saying why. Shown only after Lock it in, and never tappable.
 function ratingBox(r) {
-  const box = el('div', 'rs-rate gut');
-  box.append(el('b', '', `${percentOf(r)}% sure`));
+  const d = el('div', 'rs-rate');
+  d.append(el('b', '', `${percentOf(r)}% sure`));
   const line = ratingLine(r);
-  if (line) box.append(el('small', '', line));
-  return box;
+  if (line) d.append(el('small', '', line));
+  return d;
 }
-
-// A place from the answer list. Places outside the Code are named as plain text, since there is nothing to open.
-function listPlaceRow(p, box, body) {
-  if (p.kind === 'outside') return body.append(el('p', 'rs-grey', `Outside the Code: ${p.id}`));
-  if (p.kind === 'table' || p.kind === 'rule') return placeRow(p.kind, p.id, box);
-  if (p.page) box.append(row(p.kind === 'definition' ? `Definition: ${p.id}` : pageWords(p.page), p.kind === 'definition' ? pageWords(p.page) : '', 'page', () => open({ type: 'page', page: p.page, name: p.kind === 'definition' ? p.id : pageWords(p.page), sub: 'Where to check' })));
+const viewOf = (kind, id) => (kind === 'table' ? { type: 'table', label: id } : { type: 'rule', rule: id });
+// A place to check, as a box. Places outside the Code are named as plain text, since there is nothing to open.
+function checkBox(p) {
+  if (p.kind === 'table' || p.kind === 'rule') {
+    const info = p.kind === 'table' ? map.tables.get(p.id) : lookup(index, p.id);
+    const page = p.kind === 'table' ? info?.page : info?.pdfPage;
+    return optBox(`${p.kind === 'table' ? 'Table' : 'Rule'} ${p.id}`, [info?.title ?? '', page ? pageWords(page) : ''], { icon: p.kind, onTap: () => open(viewOf(p.kind, p.id)) });
+  }
+  if (p.kind === 'outside') return box('sp-small', el('p', 'rs-grey', `Outside the Code: ${p.id}`));
+  if (!p.page) return null;
+  const name = p.kind === 'definition' ? `Definition: ${p.id}` : pageWords(p.page);
+  return optBox(name, [p.kind === 'definition' ? pageWords(p.page) : ''], { icon: 'page', onTap: () => open({ type: 'page', page: p.page, name, sub: 'Where to check' }) });
 }
-
-// Not sure: help finishing the question by hand, and never a hint at an answer nobody has proven.
 function closestPlaceText(place) {
   if (place.kind === 'table') return { name: `Table ${place.id}`, text: ready.tables.find((t) => t.label === place.id)?.text || '' };
   return { name: `Rule ${place.id}`, text: ready.rules.get(place.id)?.text || '' };
 }
-function showNotSure(body, v) {
-  const f = v.found;
-  const unsettled = el('div', 'rs-tint');
-  unsettled.append(el('b', '', "What it couldn't settle"), document.createTextNode(v.result.because || 'The words alone could not decide it.'));
-  body.append(el('p', 'rs-grey', `You picked ${v.pick}`), el('h2', '', "The program isn't sure"));
-  if (!f.places.length) {
-    const none = el('div', 'rs-tint');
-    none.append(el('b', '', "What it couldn't settle"), document.createTextNode('The Index has no clear entry for these words. Try the Index under another word for the main thing being asked about, or ask your teacher.'));
-    body.append(none);
-    return;
+
+// The answer, under the lock, with your own working and the route check added to its box.
+function resultNodes(f, steps, judged) {
+  const nodes = answerNodes(f);
+  const r = tree.result;
+  const main = nodes[0]?.el;
+  if (!r || r.error || !main) return nodes;
+  const extra = [];
+  if (tree.work && steps.some((st) => st.type === 'work')) extra.push(workSummary(tree.work, r));
+  if (steps.some((st) => st.type === 'places')) extra.push(routeSummary(steps, judged));
+  const again = main.querySelector('.sp-again');
+  for (const d of extra) (again ? again.before(d) : main.append(d));
+  return nodes;
+}
+// The answer, under the lock. A worked answer splits into its parts, which join again into the result.
+function answerNodes(f) {
+  const r = tree.result;
+  const again = () => tapButton('btn soft sp-again', 'Try another question', startAgain);
+  if (!r) {
+    if (!tree.checking) runCheck(tree);
+    return [{ id: 'res', parent: 'lock', on: true, el: box('sp-result', el('p', 'rs-grey rs-wait', 'Checking the book')) }];
   }
-  const tabs = el('div', 'rs-tabs rs-bleed');
-  tabs.setAttribute('role', 'tablist');
-  const panel = el('div', 'rs-panel');
-  const fill = () => {
-    v.tab = v.tab || 'read';
-    for (const b of tabs.children) b.setAttribute('aria-selected', String(b.dataset.tab === v.tab));
-    panel.replaceChildren();
-    if (v.tab === 'read') {
-      const box = listBox(panel);
-      for (const p of f.places) placeRow(p.kind, p.id, box);
-      return;
-    }
-    const { name, text } = closestPlaceText(f.places[0]);
-    const out = ruledOutBy(f.options, text, name);
-    if (out.length) {
-      const card = el('div', 'card');
-      for (const c of out) {
-        const line = el('div', 'rs-way');
-        const words = el('div');
-        words.append(el('span', '', c.say));
-        line.append(el('i', '', c.letter), words);
-        card.append(line);
+  if (r.error) return [{ id: 'res', parent: 'lock', on: true, el: box('sp-result', el('p', 'rs-grey', 'This could not be checked. Try opening your book again.'), again()) }];
+  const nodes = [];
+  const main = box('sp-result');
+  nodes.push({ id: 'res', parent: 'lock', on: true, el: main });
+  if (!hasAnswer(r) && r.outside) {
+    if (tree.pick) main.append(el('p', 'rs-grey', `You picked ${tree.pick}.`));
+    main.append(el('h2', '', 'This is not in the Code'), el('p', 'rs-grey', r.because || 'The Code does not cover this. Ask your teacher where to look.'), again());
+    return nodes;
+  }
+  if (!hasAnswer(r)) {
+    if (tree.pick) main.append(el('p', 'rs-grey', `You picked ${tree.pick}`));
+    main.append(el('h2', '', "The program isn't sure"));
+    const unsettled = el('div', 'rs-tint');
+    unsettled.append(el('b', '', "What it couldn't settle"), document.createTextNode(f.places.length || r.calculation ? r.because || 'The words alone could not decide it.' : 'The Index has no clear entry for these words. Try the Index under another word for the main thing being asked about, or ask your teacher.'));
+    main.append(unsettled);
+    if (f.places.length) {
+      const { name, text } = closestPlaceText(f.places[0]);
+      const out = ruledOutBy(f.options, text, name);
+      if (out.length) {
+        const card = el('div', 'card');
+        for (const c of out) {
+          const line = el('div', 'rs-way');
+          const words = el('div');
+          words.append(el('span', '', c.say));
+          line.append(el('i', '', c.letter), words);
+          card.append(line);
+        }
+        main.append(el('p', 'rs-small', 'Ruled out'), card, el('p', 'rs-grey', 'This goes by the closest place only, so check it yourself.'));
       }
-      panel.append(card, el('p', 'rs-grey', 'This goes by the closest place only, so check it yourself.'));
-    } else panel.append(el('p', 'rs-grey', 'Nothing could be ruled out from the closest place.'));
-    panel.append(unsettled);
-  };
-  for (const [key, name] of [['read', 'Where to read'], ['out', 'Ruled out']]) {
-    const b = tapButton('rs-tab', name, () => {
-      v.tab = key;
-      fill();
-    });
-    b.dataset.tab = key;
-    b.setAttribute('role', 'tab');
-    tabs.append(b);
+    }
+    main.append(again());
+    if (f.places.length) main.append(el('p', 'rs-small', 'Where to read'));
+    if (r.calculation && r.steps?.length) return [...nodes, ...partNodes(r, null)];
+    f.places.forEach((p, i) => nodes.push({ id: `read-${i}`, parent: 'res', el: checkBox(p) }));
+    return nodes;
   }
-  body.append(tabs, panel);
-  fill();
+  const answer = f.options.find((o) => o.letter === r.choice);
+  const top = el('div', 'rs-result');
+  const percent = percentOf(r);
+  const ring = el('span', 'rs-ring');
+  ring.style.setProperty('--p', String(percent));
+  ring.append(el('b', '', `${percent}%`));
+  const said = r.status === 'worked' ? { picked: 'Worked out from the book', program: resultWords(r.result) } : pickWords(tree.pick, r);
+  const words = el('span', 'rs-words');
+  words.append(el('small', '', said.picked), el('b', '', said.program), el('small', '', answer ? `${answer.letter}) ${answer.text}` : ''));
+  top.append(ring, words);
+  main.append(top, ratingBox(r));
+  const worked = r.calculation && r.steps?.length;
+  if (!worked) {
+    const why = (r.why || []).filter((w) => w && typeof w === 'object');
+    if (why.length) {
+      const card = el('div', 'card');
+      why.forEach((w, i) => {
+        const line = el('div', 'rs-way');
+        const text = el('div');
+        text.append(el('b', '', w.head), el('span', '', w.say));
+        line.append(el('i', '', String(i + 1)), text);
+        card.append(line);
+      });
+      main.append(card);
+    } else main.append(el('p', 'rs-grey', r.because || 'See the places to check below.'));
+  }
+  if (r.mistake) {
+    const tint = el('div', 'rs-tint');
+    tint.append(el('b', '', 'Common mistake'), document.createTextNode(r.mistake));
+    main.append(tint);
+  }
+  if (r.pattern) {
+    const tint = el('div', 'rs-tint');
+    tint.append(el('b', '', 'Pattern to remember'), document.createTextNode(r.pattern));
+    main.append(tint);
+  }
+  for (const src of r.sources || []) main.append(el('p', 'rs-grey', src));
+  main.append(el('p', 'rs-small', (r.evidence || []).length ? 'Checked against the book' : 'From the answer list'), again());
+  if (worked) return [...nodes, ...partNodes(r, answer)];
+  const places = [...(r.evidence || []).map((e) => ({ kind: e.kind, id: e.ref })), ...(r.places || [])];
+  places.forEach((p, i) => {
+    const b = checkBox(p);
+    if (b) nodes.push({ id: `check-${i}`, parent: 'res', el: b });
+  });
+  return nodes;
+}
+// One worked step, as a box or as a line in the box that starts both methods.
+const refName = (s) => (s.ref ? `${s.ref.type === 'table' ? 'Table' : 'Rule'} ${s.ref.id}` : '');
+function fillStep(d, s) {
+  d.append(el('p', '', s.say));
+  if (s.value != null) d.append(el('div', 'sp-eq', resultWords({ value: s.value, unit: s.unit })));
+  if (s.ref) d.append(tapButton('link', `Open ${refName(s)}`, () => open(viewOf(s.ref.type, s.ref.id))));
+  return d;
+}
+const totalWords = (r, answer) => {
+  if (answer) return `Matches ${answer.letter}) ${answer.text}`;
+  return r.status === 'worked' ? resultWords(r.result) : 'The worked answer matches no choice, or more than one.';
+};
+// Each worked step is a part. The parts join into one box with the result.
+function partNodes(r, answer) {
+  if (r.methods) return methodNodes(r, answer);
+  const ids = [];
+  const nodes = r.steps.map((s, i) => {
+    ids.push(`part-${i}`);
+    return { id: `part-${i}`, parent: 'res', on: true, el: fillStep(box('sp-part', el('div', 'sp-tag', refName(s) || 'Work it out')), s) };
+  });
+  const total = box('sp-total', el('div', 'sp-tag', 'Worked answer'));
+  total.append(el('p', '', totalWords(r, answer)));
+  nodes.push({ id: 'total', joins: ids, on: true, el: total });
+  return nodes;
+}
+// A question worked two ways: one box both start from, a line of boxes for each method, and one box where they meet.
+function methodNodes(r, answer) {
+  const { start, one, two } = r.methods;
+  const nodes = [];
+  let parent = 'res';
+  if (start.length) {
+    const d = box('sp-start', el('div', 'sp-tag', two.length ? 'Both methods start here' : 'Start here'));
+    start.forEach((s) => d.append(fillStep(el('div', 'sp-startline'), s)));
+    nodes.push({ id: 'start', parent, on: true, el: d });
+    parent = 'start';
+  }
+  const ends = [];
+  const chain = (steps, key, name) => {
+    let from = parent;
+    steps.forEach((s, i) => {
+      const id = `${key}-${i}`;
+      const tag = [name, refName(s)].filter(Boolean).join(' · ') || 'Work it out';
+      nodes.push({ id, parent: from, on: true, el: fillStep(box('sp-part', el('div', 'sp-tag', tag)), s) });
+      from = id;
+    });
+    if (steps.length) ends.push(from);
+  };
+  chain(one, 'one', two.length ? 'Method One' : '');
+  chain(two, 'two', 'Method Two');
+  const total = box('sp-total', el('div', 'sp-tag', 'Worked answer'));
+  total.append(el('p', '', two.length && !answer ? `Both methods reach ${resultWords(r.result)}.` : totalWords(r, answer)));
+  nodes.push({ id: 'total', joins: ends, on: true, el: total });
+  return nodes;
 }
 
-function showAnswer(root, v) {
-  root.append(topBar('The answer'));
-  const area = el('div', 'rs-body');
-  area.append(el('p', 'rs-grey gut rs-wait', 'Checking the book'));
-  root.append(area);
-  const foot = el('div', 'rs-foot gut');
-  foot.append(tapButton('btn', 'Try another question', startAgain));
-  root.append(foot);
-  const mine = drawing;
-  (async () => {
-    if (!v.result) {
-      const checked = await checkQuestion(v.text, { index, map, ready, pageData: viewer.tablePage });
-      const list = await answerListHere();
-      v.result = combineAnswers(checked, list ? matchAnswer(v.found, list) : null);
-    }
-    if (mine !== drawing) return;
-    area.replaceChildren();
-    // The route is kept on this device for the pattern book. It never holds the book's own words.
-    deviceStore().then((kv) => savePattern(kv, v.found.stem, patternOf(v.found, v.result))).catch(() => {});
-    if (v.result.status !== 'answer') {
-      const body = scrollArea(area);
-      if (v.result.outside) {
-        body.append(el('p', 'rs-grey', `You picked ${v.pick}.`), el('h2', '', 'This is not in the Code'), el('p', 'rs-grey', v.result.because || 'The Code does not cover this. Ask your teacher where to look.'));
-        return;
+function drawTree(focus = null) {
+  if (!space) return;
+  const nodes = [{ id: 'q', el: rootBox, on: true }];
+  $('undo').hidden = !tree;
+  if (!tree) {
+    space.show(nodes, focus === 'last' ? ['q'] : focus);
+    return;
+  }
+  let last = ['q'];
+  foundFor(tree);
+  const guess = guessKind(tree.base);
+  nodes.push({ id: 'kind', parent: 'q', on: true, el: box('sp-kind', el('div', 'sp-tag', 'What kind?'), el('div', 'sp-big', `Looks like: ${kindName(guess)}`), el('div', 'rs-grey', 'Pick any one below.')) });
+  for (const k of KINDS) {
+    const on = tree.kind === k.k;
+    nodes.push({
+      id: `k-${k.k}`, parent: 'kind', on, dim: Boolean(tree.kind) && !on,
+      el: optBox(k.name, [k.small], {
+        icon: k.icon, on, dim: Boolean(tree.kind) && !on, best: k.k === guess,
+        onTap: () => {
+          if (tree.kind === k.k) return;
+          if (tree.kind) {
+            // Another kind starts the walk again under that box.
+            tree.trail = [];
+            tree.pick = null;
+            tree.locked = false;
+            tree.result = null;
+          }
+          tree.kind = k.k;
+          changed();
+        },
+      }),
+    });
+  }
+  last = ['kind', ...KINDS.map((k) => `k-${k.k}`)];
+  if (tree.kind) {
+    const f = foundFor(tree);
+    const steps = routeSteps(f, tree.kind);
+    const judged = routeMarks(steps);
+    let parent = `k-${tree.kind}`;
+    for (let i = 0; i < steps.length && i <= tree.trail.length; i++) {
+      const st = steps[i];
+      const id = `s${i}`;
+      const current = i === tree.trail.length;
+      const picked = tree.trail[i];
+      if (st.type === 'words' || st.type === 'book' || st.type === 'given' || st.type === 'note') {
+        nodes.push({ id, parent, on: true, el: stepBox(st, f, current) });
+        last = [id];
+        parent = id;
+        continue;
       }
-      showNotSure(body, v);
-      return;
-    }
-    const r = v.result;
-    const answer = v.found.options.find((o) => o.letter === r.choice);
-    const top = el('div', 'rs-result gut');
-    const percent = percentOf(r);
-    const ring = el('span', 'rs-ring');
-    ring.style.setProperty('--p', String(percent));
-    ring.append(el('b', '', `${percent}%`));
-    const said = pickWords(v.pick, r);
-    const words = el('span', 'rs-words');
-    words.append(el('small', '', said.picked), el('b', '', said.program), el('small', '', answer ? `${answer.letter}) ${answer.text}` : ''));
-    top.append(ring, words);
-    const tabs = el('div', 'rs-tabs');
-    tabs.setAttribute('role', 'tablist');
-    const panel = el('div', 'rs-scroll gut');
-    const fill = () => {
-      v.tab = v.tab || 'why';
-      for (const b of tabs.children) b.setAttribute('aria-selected', String(b.dataset.tab === v.tab));
-      panel.replaceChildren();
-      if (v.tab === 'why') {
-        const card = el('div', 'card');
-        const why = (r.why || []).filter((w) => w && typeof w === 'object');
-        why.forEach((w, i) => {
-          const line = el('div', 'rs-way');
-          const text = el('div');
-          text.append(el('b', '', w.head), el('span', '', w.say));
-          line.append(el('i', '', String(i + 1)), text);
-          const worked = r.steps?.[i];
-          if (worked?.value != null) line.append(el('em', 'rs-val', `${worked.value}${worked.unit ? ` ${worked.unit}` : ''}`));
-          card.append(line);
-        });
-        if (!why.length) card.append(el('p', 'rs-grey', r.because || 'See Where to check for the places to read.'));
-        panel.append(card);
-        if (r.mistake) {
-          const tint = el('div', 'rs-tint');
-          tint.append(el('b', '', 'Common mistake'), document.createTextNode(r.mistake));
-          panel.append(tint);
+      if (st.type === 'places') {
+        nodes.push({ id, parent, on: true, el: askPill(st) });
+        last = [id];
+        const choices = [...st.places.map((p, j) => [String(j), p]), [SKIP, null]];
+        const check = judged?.find((x) => x.i === i);
+        for (const [key, p] of choices) {
+          const on = picked === key;
+          const dim = picked !== undefined && !on;
+          // A place box slides its page up over the tree. "It fits" picks it.
+          const tap = () => {
+            if (p?.page) {
+              openPeek(i, key, p, current);
+              return;
+            }
+            if (current) {
+              tree.trail.push(key);
+              changed();
+            }
+            if (p) openPlace(p);
+          };
+          const mark = on ? check?.mark : undefined;
+          const book = Boolean(check && check.mark === 'no' && check.book === key && tree.showBook !== false);
+          const seen = !on && (tree.seen || []).includes(`${i}-${key}`);
+          const note = mark === 'no' && check.book !== null ? `The book went to ${st.places[Number(check.book)].title}` : on && check && !check.mark ? 'Not sure' : seen ? 'Seen · not this one' : '';
+          const b = p ? optBox(p.title, placeLines(p), { icon: p.icon, on, dim, onTap: tap, mark, book, note }) : optBox(st.skip, [], { on, dim, onTap: tap, mark, book, note });
+          if (!p) b.classList.add('sp-skip');
+          nodes.push({ id: `${id}-${key}`, parent: id, on, dim: dim && !book, book, el: b });
+          last.push(`${id}-${key}`);
         }
-      } else {
-        const box = listBox(panel);
-        for (const e of r.evidence || []) placeRow(e.kind, e.ref, box);
-        for (const p of r.places || []) listPlaceRow(p, box, panel);
-        if (!box.children.length) box.remove();
-        for (const src of r.sources || []) panel.append(el('p', 'rs-grey', src));
-        panel.append(el('p', 'rs-small', (r.evidence || []).length ? 'Checked against the book' : 'From the answer list'));
-        if (r.pattern) {
-          const tint = el('div', 'rs-tint');
-          tint.append(el('b', '', 'Pattern to remember'), document.createTextNode(r.pattern));
-          panel.append(tint);
-        }
+        if (st.note) nodes.find((n) => n.id === id).el.append(el('small', 'sp-note', st.note));
+        if (picked === undefined) break;
+        parent = `${id}-${picked}`;
+        continue;
       }
-    };
-    for (const [key, name] of [['why', r.calculation ? 'Worked steps' : 'Why'], ['where', 'Where to check']]) {
-      const b = tapButton('rs-tab', name, () => {
-        v.tab = key;
-        fill();
-      });
-      b.dataset.tab = key;
-      b.setAttribute('role', 'tab');
-      tabs.append(b);
+      if (st.type === 'work') {
+        const ids = workNodes(st, id, parent, current);
+        nodes.push(...ids.nodes);
+        last = current ? ids.nodes.map((n) => n.id) : [ids.end];
+        parent = ids.end;
+        continue;
+      }
+      if (st.type === 'lockWork') {
+        nodes.push({ id: 'lock', parent, on: true, el: lockBox(f) });
+        last = ['lock'];
+        if (tree.locked) {
+          const res = resultNodes(f, steps, judged);
+          nodes.push(...res);
+          last = res.map((n) => n.id);
+        }
+        break;
+      }
+      if (st.type === 'final') {
+        nodes.push({ id, parent, on: true, el: askPill(st) });
+        last = [id];
+        for (const o of st.options) {
+          const on = tree.pick === o.letter;
+          const dim = tree.locked && !on;
+          nodes.push({
+            id: `${id}-${o.letter}`, parent: id, on, dim,
+            el: optBox(o.letter, [o.text], {
+              on, dim, letter: true,
+              onTap: () => {
+                if (tree.locked || tree.pick === o.letter) return;
+                tree.pick = o.letter;
+                changed(['lock', ...st.options.map((x) => `${id}-${x.letter}`)]);
+              },
+            }),
+          });
+          last.push(`${id}-${o.letter}`);
+        }
+        if (tree.pick) {
+          nodes.push({ id: 'lock', parent: `${id}-${tree.pick}`, on: true, el: lockBox(f) });
+          last = ['lock'];
+        }
+        if (tree.locked) {
+          const res = resultNodes(f, steps, judged);
+          nodes.push(...res);
+          last = res.map((n) => n.id);
+        }
+        break;
+      }
+      const end = st.type === 'end'
+        ? box('sp-step', el('div', 'sp-tag', st.ask), el('p', 'rs-grey', 'There are no choices to check, so read the place you picked and decide.'), tapButton('btn soft', 'Try another question', startAgain))
+        : box('sp-step', el('div', 'sp-tag', st.ask), el('p', 'rs-grey', 'Paste the question with its choices, like A) and B), to pick an answer.'), tapButton('btn soft', 'Try another question', startAgain));
+      nodes.push({ id, parent, on: true, el: end });
+      last = [id];
     }
-    area.append(top, ratingBox(r), tabs, panel);
-    fill();
-  })().catch(() => {
-    area.replaceChildren(el('p', 'rs-grey gut rs-wait', 'This could not be checked. Try opening your book again.'));
-  });
+  }
+  space.show(nodes, focus === 'last' ? last : focus);
+  if (!peek) $('space').querySelector('.sp-peek')?.remove();
 }
 
 // The pattern book: a quiet list of routes from questions already asked. No timers, scores, streaks or new questions.
@@ -631,7 +1098,7 @@ function drawTabs() {
   }
   for (const b of bar.children) b.setAttribute('aria-selected', String(b.dataset.tab === tab));
   if (!home) return;
-  if (tab === 'find') $('home').querySelector('.rs-homehead').append(document.querySelector('.rs-homeicons'));
+  if (tab === 'find') (space ? $('spTop') : $('home').querySelector('.rs-homehead')).append(document.querySelector('.rs-homeicons'));
   if (tab === 'practice') drawPractice();
   if (tab === 'quizzes') drawQuizzes();
 }
@@ -662,68 +1129,98 @@ async function drawPractice() {
     const p = g.pattern;
     box.append(row(`Asks ${ASK_WORDS[p.asks] || p.asks}`, `${SCOPE_WORDS[p.scope] || 'Not clear'} · ${placeWords(p.place)}`, 'list', () => open({ type: 'patterns', pick: i })));
   });
-  const deck = drillDeck(groups, missed).slice(0, DRILL_MOST);
-  if (deck.length) root.append(tapButton('btn', `Practise ${deck.length} route${deck.length === 1 ? '' : 's'}`, () => open(newDrill(deck))));
+  const routes = replayDeck(drillDeck(groups, missed).slice(0, DRILL_MOST), bookLists());
+  if (routes.length) root.append(tapButton('btn', `Replay ${routes.length} route${routes.length === 1 ? '' : 's'} from memory`, () => open(newReplay(routes))));
 }
 
-/* ---------- The pattern drill ---------- */
+/* ---------- Replay from memory ---------- */
+// A route you solved comes back as blank boxes. Tap the next blank, then pick that step from memory.
+// A route you missed comes first next time. No timers, scores or streaks.
 const DRILL_MISSES = 'ce-drill-missed';
 const DRILL_MOST = 10;
-const newDrill = (deck) => ({ type: 'drill', deck, total: deck.length, had: 0, missed: [], shown: false });
 async function noteRoute(key, hadIt) {
   const kv = await deviceStore();
   await kv.set(DRILL_MISSES, noteDrill((await kv.get(DRILL_MISSES)) || {}, key, hadIt));
 }
-function showDrill(root, v) {
-  if (!v.deck.length) {
-    root.append(topBar('Pattern drill'));
-    const body = scrollArea(root);
-    const again = v.missed.length;
-    body.append(el('h2', '', 'Done for now'), el('p', 'rs-grey', `You had ${v.had} of ${v.total} route${v.total === 1 ? '' : 's'} from memory on the first try.${again ? ` ${again} came back and will show up first next time.` : ''}`));
-    const foot = el('div', 'rs-foot gut');
-    foot.append(tapButton('btn soft', 'Practise again', async () => {
-      const kv = await deviceStore();
-      const deck = drillDeck(groupPatterns(await loadPatterns(kv)), (await kv.get(DRILL_MISSES)) || {}).slice(0, DRILL_MOST);
-      views[views.length - 1] = newDrill(deck);
-      draw();
-    }), tapButton('btn', 'Back to Practice', goBack));
-    root.append(foot);
-    return;
+// Numbers from the book's own lists, used only for wrong picks when you have few routes.
+function bookLists() {
+  const rules = ready?.ruleList || [];
+  return { rules, sections: [...new Set(rules.map((r) => Number(String(r).split('-')[0])).filter(Number.isFinite))], tables: map ? [...map.tables.keys()] : [] };
+}
+function showReplay(root, v) {
+  const route = v.routes[v.r];
+  root.append(topBar('Replay from memory', `${v.r + 1} of ${v.routes.length}`));
+  const host = el('div', 'sp-host');
+  host.id = 'replay';
+  root.append(host);
+  const sp = createSpace(host, { top: 16, bottom: 16, side: 16 });
+  const zoom = el('div', 'sp-over sp-zoom');
+  for (const [name, label, act] of [['plus', 'Zoom in', () => sp.zoomBy(1.25)], ['minus', 'Zoom out', () => sp.zoomBy(0.8)], ['expand', 'Fit all', () => sp.fitAll()]]) {
+    const b = tapButton('', undefined, act);
+    b.setAttribute('aria-label', label);
+    b.append(ic(name));
+    zoom.append(b);
   }
-  const done = Math.min(v.total - 1, v.total - v.deck.length);
-  root.append(topBar('Pattern drill', `${done + 1} of ${v.total}`));
-  const body = scrollArea(root);
-  const c = v.deck[0];
-  const meter = el('div', 'rs-meter');
-  meter.setAttribute('role', 'img');
-  meter.setAttribute('aria-label', `${done} of ${v.total} done`);
-  const fill = el('i');
-  fill.style.width = `${(done / v.total) * 100}%`;
-  meter.append(fill);
-  body.append(meter, el('p', 'rs-drillq', c.question), routeCard(c.pattern, !v.shown));
-  if (!v.shown) body.append(el('p', 'rs-tint', 'Say each step to yourself, then tap Show route.'));
-  const foot = el('div', 'rs-foot gut');
-  if (!v.shown) {
-    foot.append(tapButton('btn', 'Show route', () => {
-      v.shown = true;
+  host.append(zoom);
+  const redraw = (focus) => {
+    saveSession();
+    sp.show(replayNodes(v, route, redraw), focus);
+  };
+  redraw(replayDone(v) ? ['done'] : v.open ? [`b${v.at}`, ...route.steps[v.at].opts.map((_, j) => `b${v.at}-${j}`)] : ['q', `b${v.at}`]);
+}
+function replayNodes(v, route, redraw) {
+  const q = box('sp-q', el('div', 'sp-tag', `From memory · route ${v.r + 1} of ${v.routes.length}`), el('p', 'sp-qtext', route.question));
+  const nodes = [{ id: 'q', on: true, el: q }];
+  let parent = 'q';
+  route.steps.forEach((st, i) => {
+    if (i > v.at) return;
+    const id = `b${i}`;
+    if (i < v.at) nodes.push({ id, parent, on: true, el: optBox(st.opts[st.ok], [st.name], { on: true }) });
+    else {
+      const blank = optBox('?', [st.name], {
+        cls: `sp-blank${v.open ? '' : ' now'}`,
+        onTap: () => {
+          if (v.open) return;
+          v.open = true;
+          redraw([id, ...st.opts.map((_, j) => `${id}-${j}`)]);
+        },
+      });
+      blank.setAttribute('aria-label', `${st.name} Tap to pick from memory.`);
+      nodes.push({ id, parent, on: true, el: blank });
+      if (v.open) {
+        st.opts.forEach((o, j) => {
+          const crossed = v.wrong.includes(j);
+          const b = optBox(o, [], {
+            cls: crossed ? 'sp-crossed' : '', mark: crossed ? 'no' : undefined, note: crossed ? 'Try another' : '',
+            onTap: () => {
+              const was = v.at;
+              Object.assign(v, replayPick(v, j));
+              if (replayDone(v)) noteRoute(route.key, v.firstTry === route.steps.length).catch(() => {});
+              redraw(v.at === was ? null : replayDone(v) ? ['done'] : [`b${v.at}`]);
+            },
+          });
+          b.disabled = crossed;
+          nodes.push({ id: `${id}-${j}`, parent: id, dim: crossed, el: b });
+        });
+      }
+    }
+    parent = id;
+  });
+  if (replayDone(v)) {
+    const n = route.steps.length;
+    const more = v.r + 1 < v.routes.length;
+    const done = box('sp-step', el('div', 'sp-big', 'Route done'), el('p', 'rs-grey', `You had ${v.firstTry} of ${n} steps on the first try.${v.firstTry < n ? ' This route comes first next time.' : ''}`));
+    done.append(tapButton('btn', more ? 'Next route' : 'Back to Practice', () => {
+      if (!more) {
+        goBack();
+        return;
+      }
+      Object.assign(v, { r: v.r + 1, at: 0, open: false, wrong: [], missed: false, firstTry: 0 });
       draw();
     }));
-  } else {
-    const mark = (hadIt) => {
-      const first = !v.missed.includes(c.key);
-      v.deck.shift();
-      v.shown = false;
-      if (hadIt && first) v.had += 1;
-      if (!hadIt && first) {
-        v.missed.push(c.key);
-        v.deck.push(c); // It comes back once, later in this drill.
-      }
-      if (first) noteRoute(c.key, hadIt).catch(() => {});
-      draw();
-    };
-    foot.append(tapButton('btn soft', 'I missed it', () => mark(false)), tapButton('btn', 'I had it', () => mark(true)));
+    nodes.push({ id: 'done', parent, on: true, el: done });
   }
-  root.append(foot);
+  return nodes;
 }
 
 /* ---------- Graded quizzes ---------- */
@@ -955,7 +1452,12 @@ function showRefs(root, v) {
     else if (r.type === 'range') ready.ruleList.filter((k) => inRange(k, r)).forEach(ruleRow);
     else if (r.type === 'table') box.append(row(`Table ${r.label}${r.to ? ` to ${r.to}` : ''}`, map.tables.get(r.label)?.title, 'table', () => open({ type: 'table', label: r.label })));
     else if (r.type === 'section') box.append(row(`Section ${r.section}`, '', 'list', () => open({ type: 'section', section: r.section })));
-    else if (r.type === 'see') box.append(row(`See ${r.term}`, 'Search this word instead', 'search', () => open({ type: 'walk', text: r.term, dropped: [], at: 0 })));
+    else if (r.type === 'see') {
+      box.append(row(`See ${r.term}`, 'Search this word instead', 'search', () => {
+        $('q').value = r.term;
+        startTree(r.term);
+      }));
+    }
     else if (r.type === 'appendix') body.append(el('p', 'rs-grey', `Appendix ${r.letter}: open it from the Contents.`));
   }
 }
@@ -1135,8 +1637,8 @@ function showItem(root, v) {
   const levels = canRead ? ['whole', 'read', 1.6, 2.5] : ['whole', 1.6, 2.5];
   if (v.level === undefined) v.level = canRead ? 'read' : 'whole';
   if (!levels.includes(v.level)) v.level = 'whole';
-  const walk = [...views].reverse().find((x) => x.type === 'walk');
-  const marks = walk?.found ? new Set(walk.found.marks) : null;
+  // Your key words are marked on the page while a question is open.
+  const marks = tree?.found ? new Set(tree.found.marks) : null;
   root.append(topBar(`PDF ${v.at}`, info.badge || (printedOn(v.at) ? `Printed ${printedOn(v.at)}` : '')));
   const main = el('div', 'rs-body');
   const stage = el('div', 'rs-stage');
@@ -1220,18 +1722,10 @@ function showItem(root, v) {
   const showWide = () => wide?.replaceChildren(ic(v.level === 'whole' ? 'zoom' : 'page'), document.createTextNode(v.level === 'whole' ? 'Zoom in' : 'Whole page'));
   showWide();
   sheet.append(head, more);
-  if (walk?.found?.options.length >= 2) {
+  if (tree && views.length > 1) {
     const ready = el('div', 'rs-ready gut');
-    if (walk.at + 1 < stepsFor(walk.found, walk).length - 1) {
-      ready.append(tapButton('btn soft', 'Next step', () => {
-        views.length = views.indexOf(walk) + 1;
-        walk.at += 1;
-        draw();
-      }));
-    }
-    ready.append(tapButton('btn', "I'm ready to choose", () => {
-      views.length = views.indexOf(walk) + 1;
-      walk.at = Number.MAX_SAFE_INTEGER;
+    ready.append(tapButton('btn', 'Back to your tree', () => {
+      views = [];
       draw();
     }));
     sheet.append(ready);
@@ -1325,7 +1819,7 @@ function searchFor(text) {
     return r.status === 'invalid' ? { type: 'message', text: r.reason } : { type: 'rule', rule: r.rule };
   }
   if (!/\p{L}{2}/u.test(text)) return { type: 'message', text: 'Type a rule like 2-328, a section like 32, a table like Table 65, or paste a question.' };
-  return { type: 'walk', text, dropped: [], at: 0 };
+  return { type: 'tree', text };
 }
 
 $('form').onsubmit = (e) => {
@@ -1337,7 +1831,13 @@ $('form').onsubmit = (e) => {
     return;
   }
   say('Ready. Paste a question, or type a rule, section or table.');
+  if (next.type === 'tree') {
+    startTree(next.text);
+    return;
+  }
+  tree = null;
   views = [];
+  drawTree();
   open(next);
 };
 $('q').onkeydown = (e) => {
@@ -1406,7 +1906,7 @@ document.addEventListener('click', (e) => {
 // An extra history entry catches the phone's Back button, so Back moves through the app instead of leaving it.
 // Back at the start with nothing to catch leaves the app on the first press, so a leftover entry is taken away.
 function keepBack() {
-  const need = views.length > 0 || locked || tab !== 'find';
+  const need = views.length > 0 || Boolean(tree) || locked || tab !== 'find';
   if (need && !guarded) {
     history.pushState({ ceBack: true }, '');
     guarded = true;
@@ -1423,20 +1923,23 @@ addEventListener('popstate', () => {
     keepBack();
     return;
   }
-  if (views.length) goBack();
+  if ($('app').querySelector('.sp-layer')) closeNews();
+  else if (views.length) goBack();
   else if (tab !== 'find') {
     tab = 'find';
     draw();
-  } else if (locked) toast('Locked. Tap the lock to leave.');
+  } else if (tree) undoTree();
+  else if (locked) toast('Locked. Tap the lock to leave.');
   keepBack();
 });
 
 /* ---------- Coming back to where you were ---------- */
 // Kept on this device only, so leaving the app does not lose your place.
 const SESSION = 'ce-session';
+const UNSAVED = new Set(['found', 'base', 'foundKey', 'result', 'checking']);
 function saveSession() {
   try {
-    if (views.length) localStorage.setItem(SESSION, JSON.stringify(views, (k, value) => (k === 'found' || k === 'result' ? undefined : value)));
+    if (views.length || tree) localStorage.setItem(SESSION, JSON.stringify({ views, tree }, (k, value) => (UNSAVED.has(k) ? undefined : value)));
     else localStorage.removeItem(SESSION);
   } catch {
     // Your place is not kept this time.
@@ -1445,11 +1948,15 @@ function saveSession() {
 function resumeSession() {
   try {
     const saved = JSON.parse(localStorage.getItem(SESSION) || 'null');
-    if (!Array.isArray(saved) || !saved.length) return;
-    for (const v of saved) if (v.type === 'walk' || v.type === 'answer') v.found = findInBook(v.text, index, map, ready, { dropped: v.dropped || [] });
-    views = saved;
+    // A place kept by an older version, from before the tree, is not brought back.
+    if (!saved || Array.isArray(saved)) return;
+    tree = saved.tree || null;
+    views = (saved.views || []).filter((v) => SCREENS[v?.type]);
+    if (tree?.text) $('q').value = tree.text;
     draw();
+    drawTree('last');
   } catch {
+    tree = null;
     views = [];
     draw();
   }
@@ -1622,6 +2129,8 @@ $('lockNow').onclick = async () => {
   map = null;
   ready = null;
   views = [];
+  tree = null;
+  leaveSpace();
   draw();
   $('q').value = '';
   $('q').disabled = true;
@@ -1638,7 +2147,7 @@ const TYPED = 'ce-typed';
 
 // Moves to a saved new version, never in the middle of a question or over a password you are typing.
 function applyUpdate() {
-  if (!updateReady || document.hidden || views.length || tab !== 'find') return;
+  if (!updateReady || document.hidden || views.length || tree || tab !== 'find') return;
   if (document.querySelector('input[type=password]')?.value) return;
   updateReady = false;
   // What is in the question box comes back after the move.

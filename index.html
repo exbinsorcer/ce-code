@@ -8,7 +8,7 @@
 <meta name="ce-book" content="carried">
 <link rel="icon" href="icons/icon-192.png">
 <link rel="manifest" href="manifest.webmanifest">
-<link rel="stylesheet" href="styles.css?v=a8290e52">
+<link rel="stylesheet" href="styles.css?v=344d272b">
 <script>
 // Set before the page paints, so night mode never flashes white.
 (function () {
@@ -33,20 +33,24 @@
     </div>
     <form class="rs-ask" id="form" autocomplete="off" hidden>
       <div class="card"><textarea id="q" placeholder="Paste a question, or type 2-328, 32 or Table 65" aria-label="Question, rule, section or table" disabled></textarea></div>
-      <button class="btn" id="go" disabled>Find</button>
+      <button class="btn" id="go" disabled>Break it down</button>
     </form>
     <p class="rs-grey" id="say" role="status" aria-live="polite"></p>
     <label class="btn soft" id="pick" hidden>Choose your Code PDF<input type="file" id="file" accept="application/pdf,.pdf" hidden></label>
     <button class="btn soft" id="retry" type="button" hidden>Try again</button>
     <div class="rs-push"></div>
     <button class="link" id="lockNow" type="button" hidden>Lock my book now</button>
-    <p class="note">Build a8290e52</p>
+    <div id="space" hidden>
+      <div class="sp-over sp-top" id="spTop"><b class="sp-name">Find</b><button class="sp-pill" id="newsBtn" type="button" hidden><span class="sp-dot" id="newsDot" hidden></span></button><button class="sp-pill" id="undo" type="button" hidden></button></div>
+      <div class="sp-over sp-zoom"><button id="zin" type="button" aria-label="Zoom in"></button><button id="zout" type="button" aria-label="Zoom out"></button><button id="zfit" type="button" aria-label="Fit all"></button></div>
+    </div>
+    <p class="note">Build 344d272b</p>
   </main>
   <section class="rs-scroll gut rs-tabpage" id="practice" hidden></section>
   <section class="rs-scroll gut rs-tabpage" id="quizzes" hidden></section>
   <section class="rs-view" id="result" hidden></section>
   <nav class="rs-tabbar" id="tabbar" role="tablist" aria-label="Sections" hidden></nav>
 </div>
-<script type="module" src="rules-ui.js?v=a8290e52"></script>
+<script type="module" src="rules-ui.js?v=344d272b"></script>
 </body>
 </html>
