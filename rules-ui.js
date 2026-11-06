@@ -1,21 +1,21 @@
 // The search page. The book is read on this device each time the page opens. No AI.
-import * as store from './store.js?v=344d272b';
-import * as viewer from './viewer.js?v=344d272b';
-import { createIndexer, lookup, readPage, rulePreview, parseSectionNumber, lookupSection, searchSection } from './rules.js?v=344d272b';
-import { createBookMap, lookupTable, parseTableNumber, rulesNamedIn, tablesNamedIn, watchWordsIn } from './map.js?v=344d272b';
-import { prepareFinder, findInBook, hintsFor, markRanges } from './finder.js?v=344d272b';
-import { checkQuestion } from './checker.js?v=344d272b';
-import { openAnswers, matchAnswer, combineAnswers, ratingLine, percentOf, pickWords, resultWords, PERCENTS } from './answers.js?v=344d272b';
-import { ruledOutBy } from './others.js?v=344d272b';
-import { splitQuiz, quizForClaude } from './quizzes.js?v=344d272b';
-import { GRADED, NEEDED } from './graded.js?v=344d272b';
-import { patternOf, savePattern, loadPatterns, groupPatterns, deviceStore, drillDeck, noteDrill } from './patterns.js?v=344d272b';
-import { TOTAL_PAGES } from './logic.js?v=344d272b';
-import { createSpace } from './space.js?v=344d272b';
-import { KINDS, kindName, guessKind, askedText, routeSteps, CALCULATORS, NEXT, SKIP } from './tree.js?v=344d272b';
-import { SIGNS, MOST_PARTS, newWorking, addPart, checkWorking, bookGoals, judgeRoute, routeScore, replayDeck, newReplay, replayPick, replayDone, NEWS, NEWS_ID, hasNews } from './tree-extras.js?v=344d272b';
-import { isLockedBook, unlockBook } from './crypt.js?v=344d272b';
-import { packBook, unpackBook } from './snapshot.js?v=344d272b';
+import * as store from './store.js?v=7e5a823c';
+import * as viewer from './viewer.js?v=7e5a823c';
+import { createIndexer, lookup, readPage, rulePreview, parseSectionNumber, lookupSection, searchSection } from './rules.js?v=7e5a823c';
+import { createBookMap, lookupTable, parseTableNumber, rulesNamedIn, tablesNamedIn, watchWordsIn } from './map.js?v=7e5a823c';
+import { prepareFinder, findInBook, hintsFor, markRanges } from './finder.js?v=7e5a823c';
+import { checkQuestion } from './checker.js?v=7e5a823c';
+import { openAnswers, matchAnswer, combineAnswers, ratingLine, percentOf, pickWords, resultWords, PERCENTS } from './answers.js?v=7e5a823c';
+import { ruledOutBy } from './others.js?v=7e5a823c';
+import { splitQuiz, quizForClaude } from './quizzes.js?v=7e5a823c';
+import { GRADED, NEEDED } from './graded.js?v=7e5a823c';
+import { patternOf, savePattern, loadPatterns, groupPatterns, deviceStore, drillDeck, noteDrill } from './patterns.js?v=7e5a823c';
+import { TOTAL_PAGES } from './logic.js?v=7e5a823c';
+import { createSpace } from './space.js?v=7e5a823c';
+import { KINDS, kindName, guessKind, askedText, routeSteps, CALCULATORS, NEXT, SKIP } from './tree.js?v=7e5a823c';
+import { SIGNS, MOST_PARTS, newWorking, addPart, checkWorking, bookGoals, judgeRoute, routeScore, replayDeck, newReplay, replayPick, replayDone, NEWS, NEWS_ID, hasNews } from './tree-extras.js?v=7e5a823c';
+import { isLockedBook, unlockBook } from './crypt.js?v=7e5a823c';
+import { packBook, unpackBook } from './snapshot.js?v=7e5a823c';
 
 const $ = (id) => document.getElementById(id);
 let index = null;
@@ -34,6 +34,24 @@ const say = (t) => {
   $('say').textContent = t;
 };
 
+// While every page is read, a ring shows how far along it is, instead of one line of text.
+function readingRing(total, remember) {
+  const box = $('reading');
+  const ring = box.querySelector('.rs-ring');
+  say('');
+  box.querySelector('.rs-once').hidden = !remember;
+  box.hidden = false;
+  const show = (n) => {
+    const pct = Math.round((n / total) * 100);
+    ring.style.setProperty('--p', pct);
+    ring.setAttribute('aria-valuenow', String(pct));
+    box.querySelector('.rs-ringpct').textContent = `${pct}%`;
+    box.querySelector('.rs-ringcount').textContent = `Page ${n} of ${total}`;
+  };
+  show(0);
+  return show;
+}
+
 // A saved map of the book opens at once. Without one, every page is read first.
 async function readBook(blob, savedMap = null, remember = false) {
   const total = await viewer.openBook(blob);
@@ -44,14 +62,19 @@ async function readBook(blob, savedMap = null, remember = false) {
   } else {
     const ix = createIndexer();
     const bm = createBookMap();
-    for (let n = 1; n <= total; n++) {
-      const pg = readPage(await viewer.pageData(n));
-      ix.add(pg);
-      bm.add(pg);
-      if (n % 10 === 0 || n === total) {
-        say(`Reading your book: page ${n} of ${total}`);
-        await new Promise((r) => setTimeout(r));
+    const ring = readingRing(total, remember);
+    try {
+      for (let n = 1; n <= total; n++) {
+        const pg = readPage(await viewer.pageData(n));
+        ix.add(pg);
+        bm.add(pg);
+        if (n % 10 === 0 || n === total) {
+          ring(n);
+          await new Promise((r) => setTimeout(r));
+        }
       }
+    } finally {
+      $('reading').hidden = true;
     }
     index = ix.finish();
     map = bm.finish(index);
@@ -90,9 +113,11 @@ const PATHS = {
   lock: '<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>', unlock: '<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 7.5-2"/>',
   undo: '<path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/>', check: '<path d="m5 12.5 4.5 4.5L19 7.5"/>', cross: '<path d="M6 6l12 12M18 6 6 18"/>',
   spark: '<path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M6 18l2.5-2.5M15.5 8.5 18 6"/>',
+  more: '<circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/>',
   route: '<circle cx="6" cy="6" r="2"/><circle cx="18" cy="18" r="2"/><path d="M8 6h6a3 3 0 0 1 0 6h-4a3 3 0 0 0 0 6h6"/>',
   tf: '<path d="m3 12 3 3 5-6"/><path d="m14 9 6 6M20 9l-6 6"/>', calc: '<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 7h8M8.5 12h.01M12 12h.01M15.5 12h.01M8.5 16h.01M12 16h.01M15.5 16h.01"/>',
   plus: '<path d="M12 5v14M5 12h14"/>', minus: '<path d="M5 12h14"/>', left: '<path d="M19 12H5M11 6l-6 6 6 6"/>', right: '<path d="M5 12h14M13 6l6 6-6 6"/>',
+  down: '<path d="m6 9 6 6 6-6"/>', up: '<path d="m6 15 6-6 6 6"/>',
 };
 function ic(name) {
   const t = document.createElement('template');
@@ -208,18 +233,11 @@ function enterSpace() {
   $('space').hidden = false;
   $('home').classList.add('sp-on');
   space = createSpace($('space'));
-  $('undo').append(ic('undo'), el('span', '', 'Undo'));
+  $('undo').append(ic('undo'));
   $('undo').onclick = undoTree;
-  $('zin').append(ic('plus'));
-  $('zout').append(ic('minus'));
+  // Pinch or scroll to zoom. Only "fit all" stays as a button.
   $('zfit').append(ic('expand'));
-  $('zin').onclick = () => space.zoomBy(1.25);
-  $('zout').onclick = () => space.zoomBy(0.8);
   $('zfit').onclick = () => space.fitAll();
-  $('newsBtn').hidden = false;
-  $('newsBtn').prepend(ic('spark'), el('span', 'sp-word', "What's new"));
-  $('newsBtn').setAttribute('aria-label', "What's new");
-  $('newsBtn').onclick = openNews;
   showNewsDot();
   drawTree();
 }
@@ -245,6 +263,7 @@ function foundFor(t) {
 
 function startTree(text) {
   tree = { text, dropped: [], kind: null, trail: [], pick: null, hints: 0, locked: false };
+  openHints.clear();
   peek = null;
   views = [];
   space?.forget();
@@ -290,6 +309,23 @@ function undoTree() {
   saveSession();
   drawTree('last');
 }
+// A short buzz on a pick and on Lock it in, on phones that can. Nothing happens where they cannot.
+function buzz() {
+  try {
+    navigator.vibrate?.(12);
+  } catch {
+    // This browser cannot buzz.
+  }
+}
+
+/* Press feel: a button sinks a little the moment you touch it, so you know the tap landed. */
+document.addEventListener('pointerdown', (e) => {
+  const b = e.target.closest?.('button,label.btn');
+  if (b && !b.disabled) b.classList.add('down');
+}, true);
+const unpress = () => document.querySelectorAll('.down').forEach((b) => b.classList.remove('down'));
+for (const t of ['pointerup', 'pointercancel']) addEventListener(t, unpress, true);
+
 function changed(focus = 'last') {
   peek = null;
   saveSession();
@@ -303,10 +339,33 @@ const box = (cls, ...kids) => {
   d.append(...kids);
   return d;
 };
+// A step's hint shows its first sentence only. "More" opens the rest, and it stays open while the question is open.
+const openHints = new Set();
+function hintLines(id, text, extra, cls) {
+  const [, first = text, more = ''] = String(text || '').match(/^(.+?[.!?])\s+(.+)$/s) || [];
+  const rest = [more, extra].filter(Boolean);
+  const out = [el(cls === 'p' ? 'p' : 'span', cls === 'p' ? 'rs-grey' : '', first)];
+  if (!rest.length) return out;
+  const hidden = rest.map((t) => el(cls === 'p' ? 'p' : 'span', `sp-rest${cls === 'p' ? ' rs-grey' : ''}`, t));
+  const btn = tapButton('sp-more', undefined, () => {
+    if (openHints.has(id)) openHints.delete(id);
+    else openHints.add(id);
+    show();
+    space?.refresh();
+  });
+  const show = () => {
+    const open_ = openHints.has(id);
+    hidden.forEach((h) => (h.hidden = !open_));
+    btn.replaceChildren(el('span', '', open_ ? 'Less' : 'More'), ic(open_ ? 'up' : 'down'));
+    btn.setAttribute('aria-expanded', String(open_));
+  };
+  show();
+  return [...out, ...hidden, btn];
+}
 const askPill = (st) => {
   const d = el('div', 'sp-ask');
   d.append(el('b', '', st.ask));
-  if (st.why) d.append(el('span', '', st.why));
+  if (st.why) d.append(...hintLines(st.id, st.why, st.type === 'places' ? st.note : ''));
   return d;
 };
 // mark: after Lock it in, "yes" or "no" on your pick. book: this is where the book went. note: one short line under it.
@@ -372,7 +431,7 @@ function stepBox(st, f, current) {
     }
   }
   if (st.type === 'note') {
-    d.append(el('p', 'rs-grey', st.why));
+    d.append(...hintLines(st.id, st.why, '', 'p'));
     if (st.note) d.append(el('p', 'rs-small', st.note));
   }
   if (st.type === 'given') {
@@ -406,6 +465,7 @@ function lockBox(f) {
     changed(['lock']);
   }));
   const lock = tapButton('btn', 'Lock it in', () => {
+    buzz();
     tree.locked = true;
     tree.result = null;
     changed();
@@ -579,7 +639,13 @@ function drawPeek() {
   const sheet = el('div', 'sp-peek');
   sheet.setAttribute('role', 'dialog');
   sheet.setAttribute('aria-label', `The page for ${p.title}`);
+  // Swipe: drag the handle or the title down to close the page, or up to fill the screen.
+  let swiped = false;
+  let swipeEnd = 0;
+  let start = null;
   const handle = tapButton('sp-handle', undefined, () => {
+    // The tap that ends a drag does not count.
+    if (performance.now() - swipeEnd < 400) return;
     peek.full = !peek.full;
     sheet.classList.toggle('full', peek.full);
     handle.setAttribute('aria-label', peek.full ? 'Show less of the page' : 'Show the whole page');
@@ -593,6 +659,14 @@ function drawPeek() {
   canvas.id = 'peekCanvas';
   canvas.setAttribute('aria-label', `PDF page ${p.page}`);
   paper.append(canvas);
+  // The page opens zoomed in on the marked words, big enough to read on a phone. "Whole page" is one tap away.
+  const frame = el('div', 'sp-paperframe');
+  const zoomBtn = tapButton('sp-wholebtn', undefined, () => {
+    peek.whole = !peek.whole;
+    paint();
+  });
+  zoomBtn.id = 'peekWhole';
+  frame.append(paper, zoomBtn);
   const buttons = el('div', 'two');
   if (peek.current) {
     buttons.append(tapButton('btn soft', 'Not this one', () => {
@@ -600,6 +674,7 @@ function drawPeek() {
       changed(null);
     }), tapButton('btn', 'It fits', () => {
       tree.trail.push(peek.key);
+      buzz();
       changed();
     }));
   } else buttons.append(tapButton('btn soft', 'Close', closePeek));
@@ -608,36 +683,162 @@ function drawPeek() {
     closePeek();
     openPlace(was);
   });
-  if (peek.current) sheet.append(handle, head, paper, buttons, whole);
+  if (peek.current) sheet.append(handle, head, frame, buttons, whole);
   else {
     buttons.append(whole);
-    sheet.append(handle, head, paper, buttons);
+    sheet.append(handle, head, frame, buttons);
   }
   host.append(sheet);
-  (async () => {
-    await new Promise((r) => requestAnimationFrame(r));
-    const part = p.open.type === 'rule' ? rulePreview(index, p.open.rule) : null;
-    const usable = part && !part.sideways && part.page === p.page ? part : null;
-    // A rule is drawn so its own column fills the width, like the zoomed-in page.
-    const zoom = usable ? Math.min(2.5, Math.max(1, 612 / Math.max(120, usable.x1 - usable.x0))) : 1;
-    const done = await viewer.drawPage(canvas, p.page, (paper.clientWidth || 340) - 16, zoom);
-    if (!done || mine !== peekDraw) return;
-    const words = await viewer.pageItems(p.page);
-    if (mine !== peekDraw) return;
-    const marks = tree?.found ? new Set(tree.found.marks) : null;
-    if (marks?.size) markWords(canvas, p.page, words, marks);
-    const [left, , right, top] = viewer.pageBox(p.page) || [0, 0, 612, 792];
-    const k = parseFloat(canvas.style.width) / (right - left);
-    const y = usable ? usable.top : p.open.type === 'definition' ? p.open.definition.y : null;
-    if (usable) paper.scrollLeft = Math.max(0, (usable.x0 - left) * k - 8);
-    if (y !== null && y !== undefined) paper.scrollTop = Math.max(0, (top - y - 14) * k);
-    paper.dataset.ready = '1';
-  })().catch(() => {
-    paper.replaceChildren(el('p', 'rs-grey', 'This page could not be shown here. Tap Open the full page.'));
+  // Once the sheet has slid up, it can follow your finger. Only its own slide counts, not one inside it.
+  sheet.addEventListener('animationend', (e) => {
+    if (e.target === sheet) sheet.classList.add('sp-settled');
   });
+  const grab = (e) => {
+    swiped = false;
+    start = { y: e.clientY, h: sheet.offsetHeight, id: e.pointerId };
+    sheet.classList.remove('sp-easing');
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // Followed without capture.
+    }
+  };
+  const follow = (e) => {
+    if (!start || e.pointerId !== start.id) return;
+    const dy = e.clientY - start.y;
+    if (Math.abs(dy) > 6) swiped = true;
+    if (!swiped) return;
+    sheet.style.transform = dy > 0 ? `translateY(${dy}px)` : '';
+    sheet.style.height = dy < 0 ? `${Math.min(host.clientHeight, start.h - dy)}px` : '';
+  };
+  const letGo = (e) => {
+    if (!start || e.pointerId !== start.id) return;
+    const dy = e.clientY - start.y;
+    start = null;
+    if (!swiped) return;
+    swipeEnd = performance.now();
+    sheet.classList.add('sp-easing');
+    if (dy > 90) {
+      sheet.style.transform = `translateY(${sheet.offsetHeight}px)`;
+      setTimeout(() => {
+        if (peek?.p === p) closePeek();
+      }, 260);
+      return;
+    }
+    sheet.style.transform = '';
+    sheet.style.height = '';
+    if (dy < -60) peek.full = true;
+    else if (dy > 30) peek.full = false;
+    sheet.classList.toggle('full', peek.full);
+    handle.setAttribute('aria-label', peek.full ? 'Show less of the page' : 'Show the whole page');
+  };
+  for (const part of [handle, head]) {
+    part.classList.add('sp-grab');
+    part.addEventListener('pointerdown', grab);
+    part.addEventListener('pointermove', follow);
+    part.addEventListener('pointerup', letGo);
+    part.addEventListener('pointercancel', letGo);
+  }
+  let painting = 0;
+  const paint = () => {
+    const run = ++painting;
+    const near = !peek.whole;
+    zoomBtn.replaceChildren(ic(near ? 'expand' : 'zoom'), el('span', '', near ? 'Whole page' : 'Zoom in'));
+    zoomBtn.setAttribute('aria-pressed', String(!near));
+    delete paper.dataset.ready;
+    return (async () => {
+      await new Promise((r) => requestAnimationFrame(r));
+      const part = p.open.type === 'rule' ? rulePreview(index, p.open.rule) : null;
+      const usable = part && !part.sideways && part.page === p.page ? part : null;
+      // Zoomed in, the page is drawn about two and a half times the width of the sheet. A rule's own column fills at least that.
+      const zoom = near ? (usable ? Math.min(2.5, Math.max(PEEK_ZOOM, 612 / Math.max(120, usable.x1 - usable.x0))) : PEEK_ZOOM) : 1;
+      const done = await viewer.drawPage(canvas, p.page, (paper.clientWidth || 340) - 16, zoom);
+      if (!done || mine !== peekDraw || run !== painting) return;
+      const words = await viewer.pageItems(p.page);
+      if (mine !== peekDraw || run !== painting) return;
+      const marks = tree?.found ? new Set(tree.found.marks) : null;
+      const first = marks?.size ? markWords(canvas, p.page, words, marks) : null;
+      const [left, , right, top] = viewer.pageBox(p.page) || [0, 0, 612, 792];
+      const k = parseFloat(canvas.style.width) / (right - left);
+      paper.scrollLeft = 0;
+      paper.scrollTop = 0;
+      if (near) {
+        // Start at the rule, the definition, or else the first marked word.
+        const y = usable ? usable.top : p.open.type === 'definition' ? p.open.definition.y : null;
+        const css = canvas.width / (parseFloat(canvas.style.width) || canvas.width);
+        if (usable) paper.scrollLeft = Math.max(0, (usable.x0 - left) * k - 8);
+        else if (first) paper.scrollLeft = Math.max(0, first.x / css - 24);
+        if (y !== null && y !== undefined) paper.scrollTop = Math.max(0, (top - y - 14) * k);
+        else if (first) paper.scrollTop = Math.max(0, first.y / css - 48);
+      }
+      paper.dataset.ready = '1';
+    })().catch(() => {
+      paper.replaceChildren(el('p', 'rs-grey', 'This page could not be shown here. Tap Open the full page.'));
+    });
+  };
+  paint();
 }
+const PEEK_ZOOM = 2.4;
 
-/* What's new: a button in the top bar, with a dot until you have seen it. It opens by itself once after an update. */
+/* The ⋯ menu: night, full screen, the lock and What's new behind one button, so the top bar has fewer buttons.
+   Each row taps the same button the app always had, so they work just as before. */
+function moreButton() {
+  const b = tapButton('rs-iconbtn rs-menubtn', undefined, () => ($('app').querySelector('.rs-menu') ? closeMenu() : openMenu()));
+  b.id = 'moreBtn';
+  b.setAttribute('aria-label', 'More');
+  b.setAttribute('aria-haspopup', 'menu');
+  const dot = el('span', 'sp-dot');
+  dot.id = 'newsDot';
+  dot.hidden = true;
+  b.append(ic('more'), dot);
+  return b;
+}
+function closeMenu() {
+  for (const x of $('app').querySelectorAll('.rs-menu, .rs-shield')) x.remove();
+  $('moreBtn').setAttribute('aria-expanded', 'false');
+}
+function openMenu() {
+  closeMenu();
+  const btn = $('moreBtn');
+  const at = btn.getBoundingClientRect();
+  const app = $('app').getBoundingClientRect();
+  const menu = el('div', 'rs-menu');
+  menu.setAttribute('role', 'menu');
+  const row = (icon, words, act) => {
+    const b = tapButton('rs-menuitem', undefined, () => {
+      closeMenu();
+      act();
+    });
+    b.setAttribute('role', 'menuitem');
+    b.append(ic(icon), el('span', '', words));
+    menu.append(b);
+    return b;
+  };
+  const dark = document.documentElement.hasAttribute('data-night');
+  row(dark ? 'sun' : 'moon', dark ? 'Day look' : 'Night look', () => $('night').click());
+  if (canFill()) row(document.fullscreenElement ? 'shrink' : 'expand', document.fullscreenElement ? 'Leave full screen' : 'Full screen', () => $('fullscreen').click());
+  row(locked ? 'lock' : 'unlock', locked ? 'Unlock' : 'Lock the app', () => $('home').querySelector('.rs-homeicons .rs-stay').click());
+  if (space) {
+    const news = row('spark', "What's new", openNews);
+    if (hasNews(newsSeen())) news.append(el('span', 'sp-dot'));
+  }
+  menu.style.top = `${at.bottom - app.top + 8}px`;
+  menu.style.right = `${Math.max(8, app.right - at.right)}px`;
+  // A clear layer under the menu: a tap anywhere else closes it.
+  const shield = el('div', 'rs-shield');
+  shield.onclick = closeMenu;
+  $('app').append(shield, menu);
+  btn.setAttribute('aria-expanded', 'true');
+  menu.querySelector('button').focus();
+}
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && $('app').querySelector('.rs-menu')) {
+    closeMenu();
+    $('moreBtn').focus();
+  }
+});
+
+/* What's new: a row in the ⋯ menu, with a dot on ⋯ until you have seen it. It opens by itself once after an update. */
 const NEWS_SEEN = 'ce-news';
 function newsSeen() {
   try {
@@ -942,6 +1143,7 @@ function drawTree(focus = null) {
             tree.result = null;
           }
           tree.kind = k.k;
+          buzz();
           changed();
         },
       }),
@@ -980,6 +1182,7 @@ function drawTree(focus = null) {
             }
             if (current) {
               tree.trail.push(key);
+              buzz();
               changed();
             }
             if (p) openPlace(p);
@@ -993,7 +1196,6 @@ function drawTree(focus = null) {
           nodes.push({ id: `${id}-${key}`, parent: id, on, dim: dim && !book, book, el: b });
           last.push(`${id}-${key}`);
         }
-        if (st.note) nodes.find((n) => n.id === id).el.append(el('small', 'sp-note', st.note));
         if (picked === undefined) break;
         parent = `${id}-${picked}`;
         continue;
@@ -1028,6 +1230,7 @@ function drawTree(focus = null) {
               onTap: () => {
                 if (tree.locked || tree.pick === o.letter) return;
                 tree.pick = o.letter;
+                buzz();
                 changed(['lock', ...st.options.map((x) => `${id}-${x.letter}`)]);
               },
             }),
@@ -1122,8 +1325,19 @@ async function drawPractice() {
     // Nothing saved can be read, so it shows as empty.
   }
   if (mine !== practiceDraw) return;
-  root.append(el('p', 'rs-grey', groups.length ? 'Routes from your own questions.' : 'Finish a question in Find, and its route shows up here.'));
-  if (!groups.length) return;
+  if (!groups.length) {
+    // Nothing yet: one card with a way to start, not a single grey line.
+    const card = el('div', 'card rs-empty');
+    const tile = el('div', 'rs-emptytile');
+    tile.append(ic('repeat'));
+    card.append(tile, el('div', 'rs-emptytitle', 'No routes yet'), el('p', 'rs-grey', 'Finish a question in Find, and its route shows up here.'), tapButton('btn', 'Go to Find', () => {
+      tab = 'find';
+      draw();
+    }));
+    root.append(card);
+    return;
+  }
+  root.append(el('p', 'rs-grey', 'Routes from your own questions.'));
   const box = listBox(root);
   groups.forEach((g, i) => {
     const p = g.pattern;
@@ -1155,8 +1369,8 @@ function showReplay(root, v) {
   root.append(host);
   const sp = createSpace(host, { top: 16, bottom: 16, side: 16 });
   const zoom = el('div', 'sp-over sp-zoom');
-  for (const [name, label, act] of [['plus', 'Zoom in', () => sp.zoomBy(1.25)], ['minus', 'Zoom out', () => sp.zoomBy(0.8)], ['expand', 'Fit all', () => sp.fitAll()]]) {
-    const b = tapButton('', undefined, act);
+  for (const [name, label, act] of [['expand', 'Fit all', () => sp.fitAll()]]) {
+    const b = tapButton('sp-round', undefined, act);
     b.setAttribute('aria-label', label);
     b.append(ic(name));
     zoom.append(b);
@@ -1588,7 +1802,9 @@ function itemFor(v) {
 }
 
 // Marks your key words on the page, like a highlighter. The colour multiplies, so the words stay readable.
+// Returns where the highest marked word starts, in canvas pixels, or null.
 function markWords(canvas, page, items, marks) {
+  let first = null;
   const g = canvas.getContext('2d');
   const ruler = document.createElement('canvas').getContext('2d');
   ruler.font = '100px sans-serif';
@@ -1608,6 +1824,9 @@ function markWords(canvas, page, items, marks) {
       const to = (ruler.measureText(it.str.slice(0, end)).width / whole) * it.w;
       const corners = [spot(from, -0.22 * up), spot(to, -0.22 * up), spot(to, 0.95 * up), spot(from, 0.95 * up)];
       if (corners.some((pt) => !pt)) continue;
+      const x = Math.min(...corners.map((c) => c[0]));
+      const y = Math.min(...corners.map((c) => c[1]));
+      if (!first || y < first.y - 2 || (Math.abs(y - first.y) <= 2 && x < first.x)) first = { x, y };
       g.beginPath();
       corners.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y)));
       g.closePath();
@@ -1615,6 +1834,7 @@ function markWords(canvas, page, items, marks) {
     }
   }
   g.restore();
+  return first;
 }
 
 function showItem(root, v) {
@@ -1923,7 +2143,8 @@ addEventListener('popstate', () => {
     keepBack();
     return;
   }
-  if ($('app').querySelector('.sp-layer')) closeNews();
+  if ($('app').querySelector('.rs-menu')) closeMenu();
+  else if ($('app').querySelector('.sp-layer')) closeNews();
   else if (views.length) goBack();
   else if (tab !== 'find') {
     tab = 'find';
@@ -1970,7 +2191,7 @@ try {
 } catch {
   // Nothing was remembered.
 }
-$('home').querySelector('.rs-homeicons').append(stayButton());
+$('home').querySelector('.rs-homeicons').append(stayButton(), moreButton());
 showFullScreen();
 
 /* ---------- Night mode ---------- */

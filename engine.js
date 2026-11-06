@@ -1,6 +1,6 @@
 // Finds answers in the book and builds the guided steps. No AI: it only reports what the book's own text shows.
 // book = { norm: [page text, lower case], raw: [page text], lines: async (page) => [{ y, items: [{ x, str }] }], total }
-import { normalizeText } from './logic.js?v=344d272b';
+import { normalizeText } from './logic.js?v=7e5a823c';
 
 const STOP = new Set(`a about an and any are as at be been being but by can could do does for from had has have how i if in into is it
 its may me must my no not of on or our shall should so than that the their them then there these they this to under up us was we were

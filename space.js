@@ -5,9 +5,10 @@ const GAP = 56; // Space between rows of boxes.
 const SIDE_GAP = 14; // Space between boxes in one row.
 const MIN = 0.25;
 const MAX = 2.5;
+const CLOSE = 1.35; // How close a double-tapped box comes.
 
 // host: an empty element that fills the screen. room: the part of it not covered by floating buttons.
-export function createSpace(host, room = { top: 68, bottom: 16, side: 16 }) {
+export function createSpace(host, room = { top: 84, bottom: 16, side: 16 }) {
   host.classList.add('sp');
   const stars = document.createElement('canvas');
   stars.className = 'sp-stars';
@@ -29,6 +30,7 @@ export function createSpace(host, room = { top: 68, bottom: 16, side: 16 }) {
   let glideRun = 0;
   let wanted = null; // Boxes to show once the space can be seen again.
   const known = new Set(); // Boxes already shown once.
+  const wasDim = new Map(); // Whether each box was dimmed last time, so a newly dimmed one can fade.
 
   const apply = () => {
     world.style.transform = `translate(${V.x}px,${V.y}px) scale(${V.s})`;
@@ -36,14 +38,36 @@ export function createSpace(host, room = { top: 68, bottom: 16, side: 16 }) {
   };
   const visible = () => host.clientWidth > 0 && host.clientHeight > 0;
 
-  /* Laying out the tree. A box sits one row below its parent, and a row of brothers is centred under the parent. */
+  /* Laying out the tree. A box sits one row below its parent, and a row of brothers is centred under the parent.
+     When three or more brothers are too wide for the screen, they sit two to a row, so none hide past the edge. */
   function layout() {
     const box = new Map();
-    for (const n of list) box.set(n.id, { w: n.el.offsetWidth, h: n.el.offsetHeight, d: 0, cx: 0 });
+    for (const n of list) box.set(n.id, { w: n.el.offsetWidth, h: n.el.offsetHeight, d: 0, last: 0, cx: 0 });
+    const kidsOf = new Map();
+    for (const n of list) {
+      if (n.joins || !n.parent) continue;
+      if (!kidsOf.has(n.parent)) kidsOf.set(n.parent, []);
+      kidsOf.get(n.parent).push(n);
+    }
+    const wide = host.clientWidth - 2 * room.side;
+    const wrapped = new Set();
+    for (const [id, kids] of kidsOf) {
+      const total = kids.reduce((s, c) => s + box.get(c.id).w, 0) + SIDE_GAP * (kids.length - 1);
+      if (kids.length >= 3 && total > wide) wrapped.add(id);
+    }
+    // d: the row a box sits in. last: the lowest row of it and its brothers, so its own children start under all of them.
     for (const n of list) {
       const b = box.get(n.id);
-      if (n.joins) b.d = Math.max(...n.joins.map((j) => box.get(j)?.d ?? 0)) + 1;
-      else if (n.parent && box.has(n.parent)) b.d = box.get(n.parent).d + 1;
+      if (n.joins) b.d = Math.max(...n.joins.map((j) => box.get(j)?.last ?? 0)) + 1;
+      else if (n.parent && box.has(n.parent)) {
+        const p = box.get(n.parent);
+        const kids = kidsOf.get(n.parent);
+        const two = wrapped.has(n.parent);
+        b.d = p.last + 1 + (two ? Math.floor(kids.indexOf(n) / 2) : 0);
+        b.last = p.last + (two ? Math.ceil(kids.length / 2) : 1);
+        continue;
+      }
+      b.last = b.d;
     }
     const rowH = [];
     for (const b of box.values()) rowH[b.d] = Math.max(rowH[b.d] || 0, b.h);
@@ -52,8 +76,17 @@ export function createSpace(host, room = { top: 68, bottom: 16, side: 16 }) {
     for (const n of list) {
       const b = box.get(n.id);
       if (n.joins) b.cx = n.joins.reduce((s, j) => s + (box.get(j)?.cx ?? 0), 0) / n.joins.length;
-      const kids = list.filter((c) => c.parent === n.id && !c.joins);
-      if (!kids.length) continue;
+      const kids = kidsOf.get(n.id);
+      if (!kids) continue;
+      if (wrapped.has(n.id)) {
+        // Two to a row, with the gap between them right under the parent, so its line runs down through the gap.
+        kids.forEach((c, j) => {
+          const k = box.get(c.id);
+          const alone = j === kids.length - 1 && j % 2 === 0;
+          k.cx = alone ? b.cx : j % 2 ? b.cx + SIDE_GAP / 2 + k.w / 2 : b.cx - SIDE_GAP / 2 - k.w / 2;
+        });
+        continue;
+      }
       const total = kids.reduce((s, c) => s + box.get(c.id).w, 0) + SIDE_GAP * (kids.length - 1);
       let x = b.cx - total / 2;
       for (const c of kids) {
@@ -159,6 +192,22 @@ export function createSpace(host, room = { top: 68, bottom: 16, side: 16 }) {
     apply();
   }
 
+  /* Double-tap a box to bring it close, and again to see the whole tree. Double-tap empty space to see the whole tree.
+     A double-tap on a button is left to the button, so its taps still count. */
+  let lastTap = { t: 0, x: 0, y: 0 };
+  function tapped(e, on) {
+    const now = performance.now();
+    const again = now - lastTap.t < 320 && Math.hypot(e.clientX - lastTap.x, e.clientY - lastTap.y) < 30;
+    lastTap = again ? { t: 0, x: 0, y: 0 } : { t: now, x: e.clientX, y: e.clientY };
+    if (!again || on.closest('button,a,label,textarea,input,select')) return;
+    const node = on.closest('.sp-node');
+    const b = node ? bounds([node.dataset.id]) : null;
+    if (!b) return fitAll();
+    const to = target(b, CLOSE, 1);
+    if (Math.abs(to.s - V.s) < 0.05 && Math.abs(to.x - V.x) < 8 && Math.abs(to.y - V.y) < 8) fitAll();
+    else glide(to);
+  }
+
   /* Drag, pinch and scroll. A drag never counts as a tap on a box. */
   const pts = new Map();
   let drag = null;
@@ -167,7 +216,7 @@ export function createSpace(host, room = { top: 68, bottom: 16, side: 16 }) {
     if (e.target.closest('textarea,input,select,.sp-over,.sp-peek')) return;
     glideRun++;
     pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    if (pts.size === 1) drag = { x: e.clientX, y: e.clientY, moved: false };
+    if (pts.size === 1) drag = { x: e.clientX, y: e.clientY, moved: false, target: e.target };
     else if (drag) {
       drag.moved = true;
       host.setPointerCapture(e.pointerId);
@@ -182,6 +231,8 @@ export function createSpace(host, room = { top: 68, bottom: 16, side: 16 }) {
         drag.moved = true;
         host.setPointerCapture(e.pointerId);
         host.classList.add('grabbing');
+        // A drag is not a tap, so the button under your finger comes back up.
+        host.querySelectorAll('.down').forEach((b) => b.classList.remove('down'));
       }
       if (drag.moved) {
         V.x += now.x - prev.x;
@@ -209,7 +260,7 @@ export function createSpace(host, room = { top: 68, bottom: 16, side: 16 }) {
       setTimeout(() => {
         swallow = false;
       });
-    }
+    } else if (drag && e.type === 'pointerup') tapped(e, drag.target);
     drag = null;
     host.classList.remove('grabbing');
   };
@@ -289,19 +340,31 @@ export function createSpace(host, room = { top: 68, bottom: 16, side: 16 }) {
     // nodes: [{ id, el, parent?, joins?, on?, dim?, book? }]. The boxes are put in space in this order.
     show(nodes, focus = null) {
       list = nodes;
+      const fading = [];
       layer.replaceChildren(...nodes.map((n) => {
         n.el.classList.add('sp-node');
         // Only a box that was not there before fades in.
         if (!known.has(n.id)) n.el.classList.add('sp-new');
+        // Every box is drawn again on each tap. One that was bright and is now dimmed starts bright, so it fades slowly.
+        const dim = n.el.classList.contains('dim') ? n.el : n.el.querySelector('.dim');
+        if (dim && known.has(n.id) && wasDim.get(n.id) === false) {
+          dim.classList.remove('dim');
+          fading.push(dim);
+        }
+        wasDim.set(n.id, Boolean(dim));
         known.add(n.id);
         n.el.dataset.id = n.id;
         return n.el;
       }));
       if (focus) wanted = focus;
       refresh();
+      if (fading.length) requestAnimationFrame(() => requestAnimationFrame(() => fading.forEach((d) => d.classList.add('dim'))));
     },
     // A new question: every box fades in again.
-    forget: () => known.clear(),
+    forget: () => {
+      known.clear();
+      wasDim.clear();
+    },
     glideTo,
     fitAll,
     home,

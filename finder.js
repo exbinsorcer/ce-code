@@ -1,9 +1,9 @@
 // Turns a question into where to look in the book, following the steps taught in class:
 // key words, definitions, contents, index, rule titles, then any table, note or rule the rule points to.
 // It never decides the answer. It uses the question only, not the answer choices, so it cannot give one away.
-import { parseQuestion } from './engine.js?v=344d272b';
-import { wordsOf, compareRules, lookup } from './rules.js?v=344d272b';
-import { tablesNamedIn } from './map.js?v=344d272b';
+import { parseQuestion } from './engine.js?v=7e5a823c';
+import { wordsOf, compareRules, lookup } from './rules.js?v=7e5a823c';
+import { tablesNamedIn } from './map.js?v=7e5a823c';
 
 const STOP = new Set(`a about above after all also an and any are as at be been being below between both but by can could do does during each every
 for from had has have how i if in into is it its of on onto or our per should so some such than that the their them then there these they this

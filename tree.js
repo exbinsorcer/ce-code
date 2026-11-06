@@ -1,6 +1,6 @@
 // The question tree: which kind a question looks like, and the steps that break it down. Plain data, no AI.
 // Every step comes from what findInBook found in the owner's book. Nothing here holds Code wording.
-import { kindOf } from './calc/check.js?v=344d272b';
+import { kindOf } from './calc/check.js?v=7e5a823c';
 
 export const KINDS = [
   { k: 'tf', name: 'True or false', small: 'Two choices', icon: 'tf' },

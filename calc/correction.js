@@ -5,8 +5,8 @@
 //   Method Two: load ÷ factor gives the table ampacity needed. One step, with no guessing.
 //   Method One: pick a size for the load, multiply its table ampacity by the factor, and go up a size until it carries the load.
 // The two must land on the same size, or the answer is not sure. A given size has only one way: table ampacity × factor.
-import { PLACES, table, rowForSize, cellNumber, guard, done, round, NotSure } from './book.js?v=344d272b';
-import { CHECKED_NOTES } from '../check-numbers.js?v=344d272b';
+import { PLACES, table, rowForSize, cellNumber, guard, done, round, NotSure } from './book.js?v=7e5a823c';
+import { CHECKED_NOTES } from '../check-numbers.js?v=7e5a823c';
 
 // A row label that is a range, like "4–6" or "43 and up".
 const inRange = (label, n) => {

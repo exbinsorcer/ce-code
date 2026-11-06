@@ -1,14 +1,14 @@
 // Answers math questions with the step-by-step calculators in app/calc/. Plain code, no AI.
 // It reads the inputs from the question's own words. If an input is missing or unclear, or the worked result matches no
 // choice or more than one, it says not sure. Every value comes from the owner's book at run time, never from this file.
-import { wordsOf } from '../rules.js?v=344d272b';
-import { numbersIn, sizesIn, sizeKey } from '../check-numbers.js?v=344d272b';
-import { PLACES } from './book.js?v=344d272b';
-import { boxFill } from './box-fill.js?v=344d272b';
-import { conduitFill } from './conduit-fill.js?v=344d272b';
-import { motorCircuit } from './motor.js?v=344d272b';
-import { dwellingLoad } from './dwelling.js?v=344d272b';
-import { correctedSize, correctedAmpacity } from './correction.js?v=344d272b';
+import { wordsOf } from '../rules.js?v=7e5a823c';
+import { numbersIn, sizesIn, sizeKey } from '../check-numbers.js?v=7e5a823c';
+import { PLACES } from './book.js?v=7e5a823c';
+import { boxFill } from './box-fill.js?v=7e5a823c';
+import { conduitFill } from './conduit-fill.js?v=7e5a823c';
+import { motorCircuit } from './motor.js?v=7e5a823c';
+import { dwellingLoad } from './dwelling.js?v=7e5a823c';
+import { correctedSize, correctedAmpacity } from './correction.js?v=7e5a823c';
 
 const notSure = (why) => ({ status: 'not-sure', choice: null, confidence: null, because: why, outside: false, evidence: [], why: [why] });
 const COUNT = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12 };

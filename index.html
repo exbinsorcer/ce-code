@@ -8,7 +8,7 @@
 <meta name="ce-book" content="carried">
 <link rel="icon" href="icons/icon-192.png">
 <link rel="manifest" href="manifest.webmanifest">
-<link rel="stylesheet" href="styles.css?v=344d272b">
+<link rel="stylesheet" href="styles.css?v=7e5a823c">
 <script>
 // Set before the page paints, so night mode never flashes white.
 (function () {
@@ -36,21 +36,28 @@
       <button class="btn" id="go" disabled>Break it down</button>
     </form>
     <p class="rs-grey" id="say" role="status" aria-live="polite"></p>
+    <div class="rs-reading" id="reading" hidden><div class="rs-readcard">
+      <div class="rs-ring" role="progressbar" aria-label="Reading your book" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><b class="rs-ringpct">0%</b></div>
+      <div class="rs-ringtitle">Reading your book</div>
+      <div class="rs-ringcount"></div>
+      <div class="rs-grey rs-once">Only the first time on this phone.</div>
+    </div></div>
     <label class="btn soft" id="pick" hidden>Choose your Code PDF<input type="file" id="file" accept="application/pdf,.pdf" hidden></label>
     <button class="btn soft" id="retry" type="button" hidden>Try again</button>
     <div class="rs-push"></div>
     <button class="link" id="lockNow" type="button" hidden>Lock my book now</button>
     <div id="space" hidden>
-      <div class="sp-over sp-top" id="spTop"><b class="sp-name">Find</b><button class="sp-pill" id="newsBtn" type="button" hidden><span class="sp-dot" id="newsDot" hidden></span></button><button class="sp-pill" id="undo" type="button" hidden></button></div>
-      <div class="sp-over sp-zoom"><button id="zin" type="button" aria-label="Zoom in"></button><button id="zout" type="button" aria-label="Zoom out"></button><button id="zfit" type="button" aria-label="Fit all"></button></div>
+      <div class="sp-band" aria-hidden="true"></div>
+      <div class="sp-over sp-top" id="spTop"><b class="sp-name">Find</b></div>
+      <div class="sp-over sp-zoom"><button class="sp-round" id="undo" type="button" aria-label="Undo" hidden></button><button class="sp-round" id="zfit" type="button" aria-label="Fit all"></button></div>
     </div>
-    <p class="note">Build 344d272b</p>
+    <p class="note">Build 7e5a823c</p>
   </main>
   <section class="rs-scroll gut rs-tabpage" id="practice" hidden></section>
   <section class="rs-scroll gut rs-tabpage" id="quizzes" hidden></section>
   <section class="rs-view" id="result" hidden></section>
   <nav class="rs-tabbar" id="tabbar" role="tablist" aria-label="Sections" hidden></nav>
 </div>
-<script type="module" src="rules-ui.js?v=344d272b"></script>
+<script type="module" src="rules-ui.js?v=7e5a823c"></script>
 </body>
 </html>
