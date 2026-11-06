@@ -4,9 +4,10 @@
 // It splits a rule into subrules and items, finds the one part that holds the question's key words, and tests each
 // choice against that part. It names a choice only when exactly one choice is written there and the others are not.
 // The kind of question turned on so far: choices that are a number with a unit, like "1.5 m", "300 mm", "3%" or "15 A".
-import { wordsOf as bookWords, lookup } from './rules.js?v=7e5a823c';
+import { wordsOf as bookWords, lookup } from './rules.js?v=a32e38e3';
 
-const notSure = (why) => ({ status: 'not-sure', choice: null, evidence: [], why: [why], mistake: null });
+// stuck: a short code for what blocked the rule, read by app/checker.js.
+const notSure = (why, stuck = 'rule-unclear') => ({ status: 'not-sure', choice: null, evidence: [], why: [why], mistake: null, stuck });
 const wordsOf = (text) => bookWords(text).map((w) => (w.length > 4 && w.endsWith('ie') ? `${w.slice(0, -2)}y` : w));
 const SKIP = new Set(wordsOf(`a an and are as at be by can could do does for from has have how i if in into is it its of on or the this to what when
 where which who why will with within would you your shall must may should required require rule code minimum maximum least most far apart much many
@@ -101,17 +102,21 @@ const ASKS_MAX = /\b(maximum|max\.?|at most|farthest|furthest|longest|greatest|m
 
 // f: what findInBook found. rule: { rule, text, status } with the rule's own text from the book.
 export function checkRule(f, rule) {
-  if (!rule?.text) return notSure(`The words of Rule ${rule?.rule ?? ''} could not be read.`);
-  if (rule.status && rule.status !== 'found') return notSure(`The heading of Rule ${rule.rule} is not sure.`);
-  const choices = f.options.map((o) => ({ option: o, value: choiceValue(o.text) }));
-  if (choices.length < 2 || choices.some((c) => !c.value)) return notSure('This kind of choice is not checked against rule wording yet.');
+  if (!rule?.text) return notSure(`The words of Rule ${rule?.rule ?? ''} could not be read.`, 'rule-unread');
+  if (rule.status && rule.status !== 'found') return notSure(`The heading of Rule ${rule.rule} is not sure.`, 'rule-unread');
+  // "None of the above" or "all of the above" beside number choices is set aside. The check never picks it: it only
+  // answers when one number is written in the rule, and then that number is the answer, not "none".
+  const ABOVE = /^\s*(none|all|neither|both)\s+of\s+the\s+(above|these)\W*$/i;
+  const set = f.options.filter((o) => ABOVE.test(o.text)).length === 1 ? f.options.filter((o) => !ABOVE.test(o.text)) : f.options;
+  const choices = set.map((o) => ({ option: o, value: choiceValue(o.text) }));
+  if (choices.length < 2 || choices.some((c) => !c.value)) return notSure('This kind of choice is not checked against rule wording yet.', 'word-choices');
 
   // The rule's own words, after its number, its title and any "(see Appendix ...)" beside the title.
   let body = String(rule.text).replace(/^[\sΔ∆▲△]*\d{1,2}-\d{3,4}\s*/, '');
   if (rule.title && body.startsWith(rule.title)) body = body.slice(rule.title.length);
   body = body.replace(/^\s*\((?:see|See) Appendi[^)]*\)\s*/, '');
   const parts = splitRule(body);
-  if (!parts.length) return notSure(`Rule ${rule.rule} could not be split into parts.`);
+  if (!parts.length) return notSure(`Rule ${rule.rule} could not be split into parts.`, 'rule-unread');
 
   // The part that holds the most of the question's key words. A tie means not sure.
   const keys = [...new Set(wordsOf(f.stem).filter((w) => !SKIP.has(w) && !/^\d/.test(w)))];
@@ -125,40 +130,40 @@ export function checkRule(f, rule) {
   }).sort((a, b) => b.score - a.score);
   const holds = (p) => choices.some((c) => valuesIn(p.text).some((v) => sameValue(v, c.value)));
   let best = scored[0];
-  if (!best || best.hits.length < 2) return notSure(`No part of Rule ${rule.rule} holds enough of the question's key words.`);
+  if (!best || best.hits.length < 2) return notSure(`No part of Rule ${rule.rule} holds enough of the question's key words.`, 'no-rule-part');
   const tied = scored.filter((x) => x.score === best.score);
   // A tie is only settled when one tied part holds a choice and the others hold none.
   if (tied.length > 1) {
     const withChoice = tied.filter((x) => holds(x.p));
-    if (withChoice.length !== 1) return notSure(`Two parts of Rule ${rule.rule} fit the question equally.`);
+    if (withChoice.length !== 1) return notSure(`Two parts of Rule ${rule.rule} fit the question equally.`, 'two-parts');
     best = withChoice[0];
   }
   const part = best.p;
   const where = `${rule.rule}${part.path.length ? ` ${part.path.join(' ')}` : ''}`;
   const reading = `${part.lead} ${part.text}`;
 
-  if (POINTS.test(part.text)) return notSure(`Rule ${where} points to another rule or table, which has not been followed.`);
+  if (POINTS.test(part.text)) return notSure(`Rule ${where} points to another rule or table, which has not been followed.`, 'points-on');
   const left = reading.replace(AT_LEAST, ' ').replace(AT_MOST, ' ').replace(/\bNo\.\s*(?=\d)/g, '#');
-  if (TURNS.test(left)) return notSure(`Rule ${where} has a word like "not", "except" or "unless" that could change the answer.`);
+  if (TURNS.test(left)) return notSure(`Rule ${where} has a word like "not", "except" or "unless" that could change the answer.`, 'negative');
   const min = AT_LEAST.test(reading);
   AT_LEAST.lastIndex = 0;
   const max = AT_MOST.test(reading);
   AT_MOST.lastIndex = 0;
-  if (ASKS_MIN.test(f.stem) && !min) return notSure(`The question asks for a minimum, and Rule ${where} does not give one.`);
-  if (ASKS_MIN.test(f.stem) && max && !min) return notSure(`The question asks for a minimum, but Rule ${where} gives a maximum.`);
-  if (/\b(maximum|max\.?|at most)\b/i.test(f.stem) && min && !max) return notSure(`The question asks for a maximum, but Rule ${where} gives a minimum.`);
+  if (ASKS_MIN.test(f.stem) && !min) return notSure(`The question asks for a minimum, and Rule ${where} does not give one.`, 'min-max');
+  if (ASKS_MIN.test(f.stem) && max && !min) return notSure(`The question asks for a minimum, but Rule ${where} gives a maximum.`, 'min-max');
+  if (/\b(maximum|max\.?|at most)\b/i.test(f.stem) && min && !max) return notSure(`The question asks for a maximum, but Rule ${where} gives a minimum.`, 'min-max');
 
   const written = valuesIn(part.text);
   const around = valuesIn(part.lead);
   const backed = choices.filter((c) => written.some((v) => sameValue(v, c.value)));
-  if (backed.length !== 1) return notSure(backed.length ? `${backed.length} choices are written in Rule ${where}.` : `No choice is written in Rule ${where}.`);
-  if (choices.some((c) => c !== backed[0] && around.some((v) => sameValue(v, c.value)))) return notSure(`Another choice is written just above, in Rule ${where}.`);
+  if (backed.length !== 1) return notSure(backed.length ? `${backed.length} choices are written in Rule ${where}.` : `No choice is written in Rule ${where}.`, 'choice-not-written');
+  if (choices.some((c) => c !== backed[0] && around.some((v) => sameValue(v, c.value)))) return notSure(`Another choice is written just above, in Rule ${where}.`, 'two-parts');
   const { option, value } = backed[0];
   // A part that fits nearly as well and gives another choice could be the one meant, so it is not sure.
   for (const { p, score } of scored) {
     if (p === part) continue;
     if (score < best.score - 1) break;
-    if (choices.some((c) => c !== backed[0] && valuesIn(p.text).some((v) => sameValue(v, c.value)))) return notSure(`Another part of Rule ${rule.rule} fits nearly as well and gives another choice.`);
+    if (choices.some((c) => c !== backed[0] && valuesIn(p.text).some((v) => sameValue(v, c.value)))) return notSure(`Another part of Rule ${rule.rule} fits nearly as well and gives another choice.`, 'two-parts');
   }
 
   // The most useful warning: a nearby part of the same rule that gives another choice.
@@ -215,7 +220,7 @@ export async function checkRules(f, { index, ready, pageData }) {
     // A rule in a specific section, like one for one kind of building, only counts when the question names that kind.
     const sec = ready.sections?.get(r?.section);
     if (sec?.kind === 'specific' && ![...(sec.titleWords || [])].some((w) => w.length > 3 && !SKIP.has(w) && asked.has(w))) {
-      tried.push({ rule: id, result: notSure(`Rule ${id} is in Section ${sec.section}, which the question does not name.`) });
+      tried.push({ rule: id, result: notSure(`Rule ${id} is in Section ${sec.section}, which the question does not name.`, 'wrong-section') });
       continue;
     }
     const found = index ? lookup(index, id) : { status: r?.status, title: r?.title };
@@ -227,7 +232,7 @@ export async function checkRules(f, { index, ready, pageData }) {
     tried.push({ rule: id, result });
   }
   const answers = tried.filter((x) => x.result.status === 'answer');
-  if (!answers.length) return { ...notSure(tried[0]?.result.why[0] ?? 'No rule the walk leads to settles this question.'), tried };
-  if (new Set(answers.map((x) => x.result.choice)).size > 1) return { ...notSure('Two rules point to different choices.'), tried };
+  if (!answers.length) return { ...notSure(tried[0]?.result.why[0] ?? 'No rule the walk leads to settles this question.', tried[0]?.result.stuck ?? 'no-rule'), tried };
+  if (new Set(answers.map((x) => x.result.choice)).size > 1) return { ...notSure('Two rules point to different choices.', 'two-rules'), tried };
   return { ...answers[0].result, tried };
 }

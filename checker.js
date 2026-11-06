@@ -1,24 +1,56 @@
 // Tests each answer choice against the book. Plain code, no AI.
 // It names a choice only when exactly one has the book behind it. Anything else is "not sure", because a wrong answer is far worse.
-import { findInBook, watchWords, negatedWords } from './finder.js?v=7e5a823c';
-import { wordsOf } from './rules.js?v=7e5a823c';
-import { readTable as readBookTable } from './tables.js?v=7e5a823c';
-import { checkNumbers } from './check-numbers.js?v=7e5a823c';
-import { checkRules } from './check-rules.js?v=7e5a823c';
-import { checkSituation } from './check-situations.js?v=7e5a823c';
-import { checkDefinition } from './check-definitions.js?v=7e5a823c';
-import { checkWhichRule } from './check-which-rule.js?v=7e5a823c';
-import { checkOutside } from './check-outside.js?v=7e5a823c';
-import { explainOthers } from './others.js?v=7e5a823c';
-import { checkCalculation } from './calc/check.js?v=7e5a823c';
-import { checkRuleWords, rulesFor } from './check-rule-words.js?v=7e5a823c';
-import { checkAbout } from './check-about.js?v=7e5a823c';
-import { checkRuleStructure } from './check-rule-structure.js?v=7e5a823c';
-import { checkNegative } from './check-negative.js?v=7e5a823c';
-import { checkDefinitionStatement, checkCombined } from './check-definition-statements.js?v=7e5a823c';
+import { findInBook, watchWords, negatedWords } from './finder.js?v=a32e38e3';
+import { wordsOf } from './rules.js?v=a32e38e3';
+import { readTable as readBookTable } from './tables.js?v=a32e38e3';
+import { checkNumbers } from './check-numbers.js?v=a32e38e3';
+import { checkRules } from './check-rules.js?v=a32e38e3';
+import { checkSituation } from './check-situations.js?v=a32e38e3';
+import { checkDefinition } from './check-definitions.js?v=a32e38e3';
+import { checkWhichRule } from './check-which-rule.js?v=a32e38e3';
+import { checkOutside } from './check-outside.js?v=a32e38e3';
+import { explainOthers } from './others.js?v=a32e38e3';
+import { checkCalculation } from './calc/check.js?v=a32e38e3';
+import { checkRuleWords, rulesFor } from './check-rule-words.js?v=a32e38e3';
+import { checkAbout } from './check-about.js?v=a32e38e3';
+import { checkRuleStructure } from './check-rule-structure.js?v=a32e38e3';
+import { checkNegative } from './check-negative.js?v=a32e38e3';
+import { checkDefinitionStatement, checkCombined } from './check-definition-statements.js?v=a32e38e3';
 
 const JOINING = new Set(['and', 'or', 'of', 'the', 'a', 'an', 'in', 'on', 'to', 'for', 'with', 'use', 'used']);
 const meaningful = (text) => wordsOf(text).filter((w) => !JOINING.has(w));
+// Why the checker is stuck, so each "not sure" says what blocked it. The words are what the reader sees.
+export const STUCK = {
+  'no-choices': 'No answer choices to check.',
+  'not-built': 'This kind of question cannot be checked yet.',
+  negative: 'It turns on a "not" or "except".',
+  'table-row': 'No table row clearly fits.',
+  'rule-unclear': 'The rule does not settle it.',
+  'rule-unread': 'The rule could not be read clearly.',
+  'word-choices': 'The choices are words, and the rule check reads numbers only.',
+  numbers: 'The choices are numbers, and no rule or table gave one.',
+  'two-fit': 'More than one choice fits the rule.',
+  'part-match': 'The rule holds only part of the choice.',
+  'none-above': '"All" or "none of the above" cannot be proved by matching words.',
+  'no-choice-fits': 'No choice fits the rule closely.',
+  'negative-exception': 'The rule part has its own exception.',
+  'negative-statement': 'A "not" inside a statement, not a "which is not" question.',
+  'negative-unclear': 'Not every choice is clearly in or out of the rule.',
+  'no-rule-part': 'No part of the rule holds the question\'s key words.',
+  'two-parts': 'Two parts of the rule fit.',
+  'two-rules': 'Two rules point to different choices.',
+  'points-on': 'The rule sends you to another rule or table.',
+  'min-max': 'The question asks for a minimum or maximum the rule does not give.',
+  'choice-not-written': 'No single choice is written in the rule.',
+  'wrong-section': 'The rule found is in a section the question does not name.',
+  'no-rule': 'No rule was found.',
+  'two-tables': 'Two tables disagree.',
+  'many-tables': 'More than one table fits.',
+  smallest: 'Needs a table and a rule together.',
+  other: 'The book does not settle it.',
+};
+// stuck: the reason code from STUCK, then plain reasons.
+const stuckOn = (stuck, ...why) => ({ ...notSure(...why), stuck, because: why.length && typeof why[0] === 'string' ? why[0] : STUCK[stuck] });
 const notSure = (...why) => ({ status: 'not-sure', choice: null, confidence: null, because: typeof why[0] === 'string' ? why[0] : 'The book does not settle it.', outside: false, evidence: [], why });
 
 // Every result carries a rating, a plain reason for it, and whether the book covers the subject at all.
@@ -33,6 +65,8 @@ export function rated(result) {
     evidence: result.evidence || [],
     why: result.why || [],
     mistake: result.mistake ?? null,
+    // Every "not sure" names what blocked it.
+    stuck: answer || result.status === 'worked' ? null : result.stuck || (result.outside ? null : 'other'),
   };
 }
 
@@ -149,7 +183,7 @@ async function checkAll(raw, { index, map, ready, pageData, readTable = readBook
       const open = await checkCalculation(f, { map, ready, pageData, readTable });
       if (open.status === 'worked' || open.calculation) return open;
     }
-    return notSure('There are no answer choices to check.');
+    return stuckOn('no-choices', 'There are no answer choices to check.');
   }
   // A subject the Code never mentions is sent elsewhere before anything else is tried.
   const outside = checkOutside(f, index, map);
@@ -163,7 +197,7 @@ async function checkAll(raw, { index, map, ready, pageData, readTable = readBook
   }
   const which = checkWhichRule(f, ready.rules);
   if (which.status === 'answer') return { ...which, pattern: 'Choices that are rule numbers: read each rule title.' };
-  if (!readTable || !pageData) return notSure('This kind of question cannot be checked yet.');
+  if (!readTable || !pageData) return stuckOn('not-built', 'This kind of question cannot be checked yet.');
   // A math question is worked with the calculators (app/calc/check.js), when it gives every number they need.
   const worked = await checkCalculation(f, { map, ready, pageData, readTable });
   if (worked.status === 'answer' || worked.calculation) return worked;
@@ -185,7 +219,7 @@ async function checkAll(raw, { index, map, ready, pageData, readTable = readBook
     // Then a clear rule part: one choice out and the rest shown in, or a whole statement with its nots counted.
     const neg = checkNegative(f, rulesFor(f, index, ready));
     if (neg.status === 'answer') return { ...neg, pattern: 'Questions with not or except: read the rule, then tick off each choice.' };
-    return notSure('The question turns on a negative, so it has to be read by hand.');
+    return stuckOn(neg.stuck || 'negative', 'The question turns on a negative, so it has to be read by hand.', neg.because);
   }
   if (negative) {
     const byRule = await checkRules(f, { index, ready, pageData });
@@ -193,7 +227,7 @@ async function checkAll(raw, { index, map, ready, pageData, readTable = readBook
     // Then a clear rule part: one choice out and the rest shown in, or a whole statement with its nots counted.
     const neg = checkNegative(f, rulesFor(f, index, ready));
     if (neg.status === 'answer') return { ...neg, pattern: 'Questions with not or except: read the rule, then tick off each choice.' };
-    return notSure('The question turns on a negative, so it has to be read by hand.');
+    return stuckOn(neg.stuck || 'negative', 'The question turns on a negative, so it has to be read by hand.', neg.because);
   }
 
   // The tables to try: the ones the walk leads to, and tables with nearly the same title, which a question must tell apart.
@@ -251,11 +285,16 @@ async function checkAll(raw, { index, map, ready, pageData, readTable = readBook
       if (about.status === 'answer') return about;
       tried.push(...byRule.tried.map((x) => ({ rule: x.rule, status: x.result.status, choice: x.result.choice, why: x.result.why })));
       const ruleWhy = byRule.tried.length ? [byRule.why[0]] : [];
-      return { ...notSure(...(found.flatMap((x) => x.result.why).slice(0, 1)), ...(found.length ? [] : ['No table that reads clearly fits this question.']), ...ruleWhy), tried };
+      // A rule was tried, so the rule's own reason comes first: that is what blocked it.
+      // Word choices are read by the word check, so its reason is the real one.
+      const ruleStuck = byRule.stuck === 'word-choices' ? worded.stuck || byRule.stuck : byRule.stuck;
+      const stuck = byRule.tried.length ? ruleStuck || 'rule-unclear' : found.length ? 'table-row' : 'no-rule';
+      const tableWhy = [...(found.flatMap((x) => x.result.why).slice(0, 1)), ...(found.length ? [] : ['No table that reads clearly fits this question.'])];
+      return { ...stuckOn(stuck, ...ruleWhy, ...tableWhy), tried };
     }
-    return { ...notSure(...(found.flatMap((x) => x.result.why).slice(0, 2)), ...(found.length ? [] : ['No table that reads clearly fits this question.'])), tried, ...(smallest ? { smallest } : {}) };
+    return { ...stuckOn('smallest', ...(found.flatMap((x) => x.result.why).slice(0, 2)), ...(found.length ? [] : ['No table that reads clearly fits this question.'])), tried, ...(smallest ? { smallest } : {}) };
   }
-  if (new Set(answers.map((x) => x.result.choice)).size > 1) return { ...notSure('Two tables point to different choices.'), tried };
+  if (new Set(answers.map((x) => x.result.choice)).size > 1) return { ...stuckOn('two-tables', 'Two tables point to different choices.'), tried };
   // A number is only trusted when exactly one table gives it. When several do, the one whose title holds clearly more of
   // the question's words is the one a reader would open. A tie means not sure.
   let numberAnswers = answers.filter((x) => x.numbers);
@@ -265,7 +304,7 @@ async function checkAll(raw, { index, map, ready, pageData, readTable = readBook
     const cover = (x) => new Set(meaningful([x.info.title || '', x.stub || ''].join(' ')).filter((w) => asked.has(w))).size;
     const best = Math.max(...numberAnswers.map(cover));
     numberAnswers = numberAnswers.filter((x) => cover(x) === best);
-    if (numberAnswers.length > 1) return { ...notSure('More than one table fits the question.'), tried };
+    if (numberAnswers.length > 1) return { ...stuckOn('many-tables', 'More than one table fits the question.'), tried };
     answers.splice(0, answers.length, ...answers.filter((x) => !x.numbers || x === numberAnswers[0]));
   }
 

@@ -2,8 +2,8 @@
 // Today it reads "when" choices (before, after, at the time of) against a rule's conditions, and "may" or "shall"
 // choices against what the rule allows or requires. It answers only when exactly one choice fits, and no other choice
 // fits any part that holds the question's words.
-import { ruleParts } from './check-rule-words.js?v=7e5a823c';
-import { structureOf, openerOf, ideasOf } from './rule-structure.js?v=7e5a823c';
+import { ruleParts } from './check-rule-words.js?v=a32e38e3';
+import { structureOf, openerOf, ideasOf } from './rule-structure.js?v=a32e38e3';
 
 const notSure = (why) => ({ status: 'not-sure', choice: null, confidence: null, because: why, outside: false, evidence: [], why: [why] });
 const share = (want, have) => (want.length ? want.filter((w) => have.has(w)).length / want.length : 0);

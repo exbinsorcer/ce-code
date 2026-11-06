@@ -1,7 +1,7 @@
 // One motor on continuous duty: its full load current, the smallest branch circuit conductor, and the largest
 // overcurrent device. Logic only, no screens. Every percent, current and ampacity is read from the owner's book.
-import { PLACES, table, cellNumber, ruleNumber, guard, done, round, NotSure } from './book.js?v=7e5a823c';
-import { CHECKED_NOTES } from '../check-numbers.js?v=7e5a823c';
+import { PLACES, table, cellNumber, ruleNumber, guard, done, round, NotSure } from './book.js?v=a32e38e3';
+import { CHECKED_NOTES } from '../check-numbers.js?v=a32e38e3';
 
 const lower = (s) => String(s).toLowerCase();
 const DEVICES = { 'time-delay fuse': /^time-delay fuses?$/i, 'non-time-delay fuse': /^non-time-delay/i, 'inverse-time breaker': /inverse-time circuit breaker/i };

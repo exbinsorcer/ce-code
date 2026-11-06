@@ -1,5 +1,5 @@
 // A graded quiz pasted on the phone. It stays on the device until you copy it yourself. Nothing here sends anything.
-import { parseQuestion } from './engine.js?v=7e5a823c';
+import { parseQuestion } from './engine.js?v=a32e38e3';
 
 const HEADER = /^\s*Question\s+\d+\b/i;
 const OPTION = /^[\s*•-]*\(?[A-H][).:]\s+\S/;

@@ -1,8 +1,8 @@
 // Conduit fill, by adding up the cross-sectional areas of the conductors. Logic only, no screens.
 // The fill percent for the number of conductors, each conductor's area and the conduit's allowed area are all read from
 // the owner's book at run time. If any one cannot be read clearly, the answer is not sure.
-import { PLACES, table, cellNumber, guard, done, round, NotSure } from './book.js?v=7e5a823c';
-import { sizeKey } from '../check-numbers.js?v=7e5a823c';
+import { PLACES, table, cellNumber, guard, done, round, NotSure } from './book.js?v=a32e38e3';
+import { sizeKey } from '../check-numbers.js?v=a32e38e3';
 
 const lower = (s) => String(s).toLowerCase().replace(/\s+/g, ' ').trim();
 

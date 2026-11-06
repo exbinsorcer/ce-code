@@ -2,7 +2,7 @@
 // It follows the rule for boxes with conductors of different sizes or a volume of their own: each conductor needs the
 // space the table gives for its size, the box loses room for studs, devices and deep devices, and the total must fit.
 // Every space and constant is read from the owner's book at run time.
-import { PLACES, table, rowForSize, cellNumber, columnWith, ruleNumber, guard, done, round, NotSure } from './book.js?v=7e5a823c';
+import { PLACES, table, rowForSize, cellNumber, columnWith, ruleNumber, guard, done, round, NotSure } from './book.js?v=a32e38e3';
 
 // input: { volume: box volume in mL (all sections together), conductors: [{ size: '14', count: 4 }],
 //          studs: fixture studs or hickeys, devices: flush devices on one strap, deep: [depth in cm of each deep device] }

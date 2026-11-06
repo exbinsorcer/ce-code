@@ -1,21 +1,21 @@
 // The search page. The book is read on this device each time the page opens. No AI.
-import * as store from './store.js?v=7e5a823c';
-import * as viewer from './viewer.js?v=7e5a823c';
-import { createIndexer, lookup, readPage, rulePreview, parseSectionNumber, lookupSection, searchSection } from './rules.js?v=7e5a823c';
-import { createBookMap, lookupTable, parseTableNumber, rulesNamedIn, tablesNamedIn, watchWordsIn } from './map.js?v=7e5a823c';
-import { prepareFinder, findInBook, hintsFor, markRanges } from './finder.js?v=7e5a823c';
-import { checkQuestion } from './checker.js?v=7e5a823c';
-import { openAnswers, matchAnswer, combineAnswers, ratingLine, percentOf, pickWords, resultWords, PERCENTS } from './answers.js?v=7e5a823c';
-import { ruledOutBy } from './others.js?v=7e5a823c';
-import { splitQuiz, quizForClaude } from './quizzes.js?v=7e5a823c';
-import { GRADED, NEEDED } from './graded.js?v=7e5a823c';
-import { patternOf, savePattern, loadPatterns, groupPatterns, deviceStore, drillDeck, noteDrill } from './patterns.js?v=7e5a823c';
-import { TOTAL_PAGES } from './logic.js?v=7e5a823c';
-import { createSpace } from './space.js?v=7e5a823c';
-import { KINDS, kindName, guessKind, askedText, routeSteps, CALCULATORS, NEXT, SKIP } from './tree.js?v=7e5a823c';
-import { SIGNS, MOST_PARTS, newWorking, addPart, checkWorking, bookGoals, judgeRoute, routeScore, replayDeck, newReplay, replayPick, replayDone, NEWS, NEWS_ID, hasNews } from './tree-extras.js?v=7e5a823c';
-import { isLockedBook, unlockBook } from './crypt.js?v=7e5a823c';
-import { packBook, unpackBook } from './snapshot.js?v=7e5a823c';
+import * as store from './store.js?v=a32e38e3';
+import * as viewer from './viewer.js?v=a32e38e3';
+import { createIndexer, lookup, readPage, rulePreview, parseSectionNumber, lookupSection, searchSection } from './rules.js?v=a32e38e3';
+import { createBookMap, lookupTable, parseTableNumber, rulesNamedIn, tablesNamedIn, watchWordsIn } from './map.js?v=a32e38e3';
+import { prepareFinder, findInBook, hintsFor, markRanges } from './finder.js?v=a32e38e3';
+import { checkQuestion } from './checker.js?v=a32e38e3';
+import { openAnswers, matchAnswer, combineAnswers, ratingLine, percentOf, pickWords, resultWords, PERCENTS } from './answers.js?v=a32e38e3';
+import { ruledOutBy } from './others.js?v=a32e38e3';
+import { splitQuiz, quizForClaude } from './quizzes.js?v=a32e38e3';
+import { GRADED, NEEDED } from './graded.js?v=a32e38e3';
+import { patternOf, savePattern, loadPatterns, groupPatterns, deviceStore, drillDeck, noteDrill } from './patterns.js?v=a32e38e3';
+import { TOTAL_PAGES } from './logic.js?v=a32e38e3';
+import { createSpace } from './space.js?v=a32e38e3';
+import { KINDS, kindName, guessKind, askedText, routeSteps, CALCULATORS, NEXT, SKIP } from './tree.js?v=a32e38e3';
+import { SIGNS, MOST_PARTS, newWorking, addPart, checkWorking, bookGoals, judgeRoute, routeScore, replayDeck, newReplay, replayPick, replayDone, NEWS, NEWS_ID, hasNews } from './tree-extras.js?v=a32e38e3';
+import { isLockedBook, unlockBook } from './crypt.js?v=a32e38e3';
+import { packBook, unpackBook } from './snapshot.js?v=a32e38e3';
 
 const $ = (id) => document.getElementById(id);
 let index = null;

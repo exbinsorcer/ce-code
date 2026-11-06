@@ -1,6 +1,6 @@
 // Answers "which rule" questions, where each choice is a rule number. Plain code, no AI.
 // It reads each rule's own title and names a choice only when exactly one title is fully in the question.
-import { rootOf, rootsOf } from './check-situations.js?v=7e5a823c';
+import { rootOf, rootsOf } from './check-situations.js?v=a32e38e3';
 
 const LIGHT = new Set(['a', 'an', 'the', 'of', 'to', 'and', 'or', 'in', 'on', 'for', 'with', 'by', 'general']);
 const roots = (text) => rootsOf(text).filter((w) => !LIGHT.has(w)).map(rootOf);

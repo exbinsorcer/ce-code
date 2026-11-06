@@ -2,8 +2,8 @@
 // and "all of the above". Plain code, no AI. It finds the one rule part that holds the question's words, then tests each
 // choice against that part's own words. Anything unclear is "not sure", because a wrong answer is far worse.
 // Number-with-unit choices belong to app/check-rules.js.
-import { splitRule } from './check-rules.js?v=7e5a823c';
-import { rootOf, rootsOf } from './check-situations.js?v=7e5a823c';
+import { splitRule } from './check-rules.js?v=a32e38e3';
+import { rootOf, rootsOf } from './check-situations.js?v=a32e38e3';
 
 const LIGHT = new Set(['a', 'an', 'the', 'of', 'to', 'and', 'or', 'in', 'on', 'for', 'with', 'by', 'is', 'are', 'be', 'been', 'has', 'have', 'that', 'which', 'it', 'its', 'as', 'at', 'from', 'this', 'then', 'there', 'their', 'any', 'will', 'must', 'shall', 'may', 'can', 'if', 'when', 'after', 'before', 'only', 'all', 'above', 'following', 'code', 'ce', 'rule', 'electrical']);
 const NEGATIVE = new Set(['not', 'no', 'never', 'nor', 'without', 'cannot']);
@@ -11,7 +11,10 @@ const CATCH = /\b(?:except|unless|notwithstanding)\b/i;
 const roots = (text) => rootsOf(text).filter((w) => !LIGHT.has(w) && !NEGATIVE.has(w)).map(rootOf);
 const negatives = (text) => rootsOf(text).filter((w) => NEGATIVE.has(w)).length;
 const share = (want, have) => (want.length ? want.filter((w) => have.has(w)).length / want.length : 0);
-const notSure = (...why) => ({ status: 'not-sure', choice: null, confidence: null, because: why[0], outside: false, evidence: [], why });
+// What blocked the word check, as a short code app/checker.js reads.
+const CODES = [[/no answer choices/, 'no-choices'], [/numbers are read/, 'numbers'], [/both hold|fits nearly|choices fit|shares many words/, 'two-fit'], [/No rule holds/, 'no-rule-part'], [/exception/, 'negative'], [/only part/, 'part-match'], [/None of the above/, 'none-above'], [/No choice fits/, 'no-choice-fits']];
+const codeOf = (why) => CODES.find(([re]) => re.test(String(why)))?.[1] || 'rule-unclear';
+const notSure = (...why) => ({ status: 'not-sure', choice: null, confidence: null, because: why[0], outside: false, evidence: [], why, stuck: codeOf(why[0]) });
 
 const TRUE_FALSE = (o) => /^(?:true|false)$/i.test(o.text.trim());
 const ALL = /^all\s+of\s+the\s+above$/i;

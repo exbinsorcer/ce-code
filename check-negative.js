@@ -3,10 +3,13 @@
 // - "which is not" and "except": exactly one choice fails the part and every other choice is shown to pass it
 // - true or false: the whole statement sits in one part with no exception, and the "not"s decide it
 // Anything else stays not sure.
-import { ruleParts, bestPart } from './check-rule-words.js?v=7e5a823c';
-import { ideasOf } from './rule-structure.js?v=7e5a823c';
+import { ruleParts, bestPart } from './check-rule-words.js?v=a32e38e3';
+import { ideasOf } from './rule-structure.js?v=a32e38e3';
 
-const notSure = (why) => ({ status: 'not-sure', choice: null, confidence: null, because: why, outside: false, evidence: [], why: [why] });
+// What blocked the "not" check, as a short code app/checker.js reads.
+const CODES = [[/no answer choices/, 'no-choices'], [/numbers are read/, 'numbers'], [/exception/, 'negative-exception'], [/only part/, 'part-match'], [/is not a "which is not"/, 'negative-statement'], [/above/, 'none-above'], [/clearly in or out/, 'negative-unclear']];
+const codeOf = (why) => CODES.find(([re]) => re.test(String(why)))?.[1] || 'negative';
+const notSure = (why) => ({ status: 'not-sure', choice: null, confidence: null, because: why, outside: false, evidence: [], why: [why], stuck: codeOf(why) });
 const NEG = /\b(?:not|no|never|without|cannot|isn't|aren't|doesn't|don't)\b/gi;
 const CATCH = /\b(?:except|unless|notwithstanding)\b/i;
 const WHICH_NOT = /\b(?:which|what)\b[^?]*\b(?:not|except)\b|\ball\b[^?]*\bexcept\b|\bexcept\b[^?]*\?|\bnot\b[^?]*\bwhich\b/i;
