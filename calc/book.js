@@ -1,8 +1,8 @@
 // Shared reading for the calculators. Every value comes from the owner's book at run time: table cells through
 // app/tables.js and numbers inside a rule's own wording. If a value cannot be read clearly, the answer is not sure.
 // No values from the book are written here.
-import { splitRule } from '../check-rules.js?v=a32e38e3';
-import { sizeKey } from '../check-numbers.js?v=a32e38e3';
+import { splitRule } from '../check-rules.js?v=a8a283be';
+import { sizeKey } from '../check-numbers.js?v=a8a283be';
 
 // Where each calculator reads. Rule and table numbers only, never their contents. The Lead can change these in one place.
 export const PLACES = {

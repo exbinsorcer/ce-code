@@ -1,6 +1,6 @@
 // Shows the PDF and searches it. The page text is held in memory only and never saved.
-import { normalizeText } from './logic.js?v=a32e38e3';
-import { readRulings } from './tables.js?v=a32e38e3';
+import { normalizeText } from './logic.js?v=a8a283be';
+import { readRulings } from './tables.js?v=a8a283be';
 
 let pdfjs;
 let doc = null;

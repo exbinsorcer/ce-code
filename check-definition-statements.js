@@ -2,7 +2,7 @@
 // - a true or false statement about a defined term
 // - combined choices such as "answer A and C apply", where the definition has several items
 // Plain code, no AI. Anything unclear is "not sure".
-import { rootOf, rootsOf } from './check-situations.js?v=a32e38e3';
+import { rootOf, rootsOf } from './check-situations.js?v=a8a283be';
 
 const LIGHT = new Set(['a', 'an', 'the', 'of', 'to', 'and', 'or', 'in', 'on', 'for', 'with', 'by', 'is', 'are', 'be', 'that', 'which', 'it', 'its', 'as', 'at', 'from', 'this', 'any', 'etc', 'term', 'when', 'used', 'code', 'ce', 'refers', 'means', 'mean', 'considered', 'has', 'have', 'one', 'more', 'someone', 'place', 'places']);
 const NEGATIVE = new Set(['not', 'no', 'never', 'without', 'cannot']);

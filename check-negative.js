@@ -3,8 +3,8 @@
 // - "which is not" and "except": exactly one choice fails the part and every other choice is shown to pass it
 // - true or false: the whole statement sits in one part with no exception, and the "not"s decide it
 // Anything else stays not sure.
-import { ruleParts, bestPart } from './check-rule-words.js?v=a32e38e3';
-import { ideasOf } from './rule-structure.js?v=a32e38e3';
+import { ruleParts, bestPart } from './check-rule-words.js?v=a8a283be';
+import { ideasOf } from './rule-structure.js?v=a8a283be';
 
 // What blocked the "not" check, as a short code app/checker.js reads.
 const CODES = [[/no answer choices/, 'no-choices'], [/numbers are read/, 'numbers'], [/exception/, 'negative-exception'], [/only part/, 'part-match'], [/is not a "which is not"/, 'negative-statement'], [/above/, 'none-above'], [/clearly in or out/, 'negative-unclear']];

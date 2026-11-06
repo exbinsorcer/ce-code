@@ -1,16 +1,16 @@
 // Turns a question into where to look in the book, following the steps taught in class:
 // key words, definitions, contents, index, rule titles, then any table, note or rule the rule points to.
 // It never decides the answer. It uses the question only, not the answer choices, so it cannot give one away.
-import { parseQuestion } from './engine.js?v=a32e38e3';
-import { wordsOf, compareRules, lookup } from './rules.js?v=a32e38e3';
-import { tablesNamedIn } from './map.js?v=a32e38e3';
+import { parseQuestion } from './engine.js?v=a8a283be';
+import { wordsOf, compareRules, lookup } from './rules.js?v=a8a283be';
+import { tablesNamedIn } from './map.js?v=a8a283be';
 
 const STOP = new Set(`a about above after all also an and any are as at be been being below between both but by can could do does during each every
 for from had has have how i if in into is it its of on onto or our per should so some such than that the their them then there these they this
 those through to under until up upon us was were what when where which while who whom why will with within would you your
 type kind used use using given following correct true false answer question options option required require requires according code ce cec
 choose select best shown state find being let like much many need needs make makes made get rule rules allowed permitted far apart often high big long large small can
-designated present installed install needed apply applies mean located`.split(/\s+/));
+designated present installed install needed apply applies mean located referred termed`.split(/\s+/));
 
 // Words kept for meaning, and shown to the reader, but not used to find a page.
 const CONDITIONS = ['not', 'no', 'without', 'except', 'unless', 'notwithstanding', 'may', 'must', 'shall', 'only', 'minimum', 'maximum', 'least', 'most', 'more', 'less', 'never', 'always'];
@@ -52,6 +52,8 @@ const ASKING_WORDS = new Set(['definition', 'definitions', 'define', 'defined', 
 export const GENERAL_SECTIONS = new Set([0, 2, 4, 6, 8, 10, 12, 14, 16, 26]);
 
 const DEFINE = /(?:definition\s+(?:of|for)|define|meaning\s+of|what\s+does|what\s+is\s+meant\s+by|what\s+is\s+an?|what\s+are)\s+(?:the\s+|an?\s+)?["'“]?([\p{L}\p{N} ,-]+?)["'”]?(?:\s+mean)?\s*\??$/iu;
+// A question that describes something and asks for its name, like "... is referred to as:".
+const NAMES_TERM = /\b(?:is|are)\s+(?:referred\s+to|known|called|termed)\s+as\b|\bis\s+(?:called|termed)\s*:?\s*$|\bthe\s+(?:term|name)\s+(?:for|given\s+to)\b|\bwhich\s+(?:term|word)\b/i;
 const LOOKS_LIKE_TABLE = /\b(what\s+size|how\s+big|minimum\s+size|maximum\s+number|how\s+many|ampacity|ampacities|correction\s+factors?|spacing|gauge|awg|rating\s+of|largest|smallest|type\s+of\s+\w*\s*enclosure|enclosure\s+type)\b/i;
 
 // "No. 6" is a size, not a negative.
@@ -167,7 +169,11 @@ export function prepareFinder(index, map) {
   // A word in many section titles, like equipment, says nothing about which section you want.
   const titleCounts = new Map();
   for (const s of sections.values()) for (const w of s.titleWords) titleCounts.set(w, (titleCounts.get(w) || 0) + 1);
-  const defs = map.definitions.map((d) => ({ ...d, words: lightWords(d.term) }));
+  // head: the term without a note in brackets, like "(as applied to ...)", which only says where the term is used. A
+  // question usually names just the head. textWords: what the definition says, for a question that describes a thing.
+  const defs = map.definitions.map((d) => ({
+    ...d, words: lightWords(d.term), head: lightWords(String(d.term).replace(/\([^)]*\)/g, ' ')), textWords: rooted(new Set(lightWords(d.text || ''))),
+  }));
   for (const d of defs) addAll(d.words);
   // A root is as common as all the words that share it.
   const rootDf = new Map();
@@ -374,12 +380,18 @@ export function findInBook(raw, index, map, ready, { dropped = [] } = {}) {
   let definitions;
   if (defWords?.length) {
     const want = defWords.join(' ');
-    definitions = ready.defs.filter((d) => d.words.join(' ') === want);
+    definitions = ready.defs.filter((d) => d.words.join(' ') === want || d.head.join(' ') === want);
     if (!definitions.length) definitions = ready.defs.filter((d) => defWords.every((w) => d.words.includes(w))).slice(0, 4);
   } else {
-    definitions = ready.defs.filter((d) => d.words.length && d.words.every((w) => stemWords.has(w)))
-      .sort((a, b) => b.words.length - a.words.length || ready.idf(b.words[0]) - ready.idf(a.words[0])).slice(0, 4);
+    definitions = ready.defs.filter((d) => d.head.length && d.head.every((w) => stemWords.has(w)))
+      .sort((a, b) => b.head.length - a.head.length || ready.idf(b.head[0]) - ready.idf(a.head[0])).slice(0, 4);
   }
+  // A question that describes a thing and asks what it is called: the definitions whose own words fit it best come first.
+  const described = !defWords && NAMES_TERM.test(stem)
+    ? ready.defs.map((d) => ({ d, m: measure(d.textWords) })).filter(({ m }) => m.reach >= 0.5)
+      .sort((a, b) => b.m.sum * b.m.reach - a.m.sum * a.m.reach).slice(0, 3).map(({ d }) => d)
+    : [];
+  if (described.length) definitions = [...described, ...definitions.filter((d) => !described.includes(d))].slice(0, 4);
 
   const headings = measured.slice(0, 3).map(({ h, s }) => ({ section: h.section, title: h.title, page: h.page, printed: h.printed, top: h.top, score: round(s) }));
 
@@ -446,6 +458,7 @@ export function findInBook(raw, index, map, ready, { dropped = [] } = {}) {
   if (named) route = { go: 'rule', why: 'The question names a rule, so go straight to it.', target: named };
   else if (namedTable) route = { go: 'table', why: 'The question names a table, so go straight to it.', target: namedTable };
   else if (defWords && definitions.length) route = { go: 'definitions', why: 'It asks what a word means, so start in Section 0, Definitions.' };
+  else if (described.length) route = { go: 'definitions', why: 'It describes something and asks what it is called, so look for it in Section 0, Definitions.' };
   else if (LOOKS_LIKE_TABLE.test(stem) && rankedTables.length) route = { go: 'index', why: 'It asks for a size, number or type. Those often end in a table, so use the Index to find the rule or table.' };
   else if (headings[0] && headings[0].score >= (rankedRules[0]?.score ?? 0) * 0.55) route = { go: 'contents', why: 'A heading in the Contents matches your key words, so try that section first.' };
   else if (topEntries.length) route = { go: 'index', why: 'No section stands out, so look up your key words in the Index.' };

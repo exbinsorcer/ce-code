@@ -4,7 +4,7 @@
 // It splits a rule into subrules and items, finds the one part that holds the question's key words, and tests each
 // choice against that part. It names a choice only when exactly one choice is written there and the others are not.
 // The kind of question turned on so far: choices that are a number with a unit, like "1.5 m", "300 mm", "3%" or "15 A".
-import { wordsOf as bookWords, lookup } from './rules.js?v=a32e38e3';
+import { wordsOf as bookWords, lookup } from './rules.js?v=a8a283be';
 
 // stuck: a short code for what blocked the rule, read by app/checker.js.
 const notSure = (why, stuck = 'rule-unclear') => ({ status: 'not-sure', choice: null, evidence: [], why: [why], mistake: null, stuck });

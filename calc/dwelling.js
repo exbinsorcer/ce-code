@@ -1,7 +1,7 @@
 // Minimum calculated load for the service or feeder of a single dwelling. Logic only, no screens.
 // It works out both ways the rule gives, a) by adding up the loads and b) the flat load for the floor area, and takes
 // the greater. Every wattage, area and percent is read from the rule's own wording at run time.
-import { PLACES, ruleNumber, guard, done, NotSure } from './book.js?v=a32e38e3';
+import { PLACES, ruleNumber, guard, done, NotSure } from './book.js?v=a8a283be';
 
 // input: { livingArea: m² of living area, worked out the way the book says; floorArea: m² not counting the basement;
 //          heating: W after its demand factors; airConditioning: W; rangeW: rating of one electric range, or 0;

@@ -2,7 +2,7 @@
 // Plain code, no AI. Those answers sit in pages that are not numbered rules: the pages before Section 0's rules, the
 // Object, Scope and start of the definitions, the first page of each appendix, and the whole of each short appendix.
 // The pages are read when asked, through pageData, and nothing is added to the saved book map.
-import { checkParts } from './check-rule-words.js?v=a32e38e3';
+import { checkParts } from './check-rule-words.js?v=a8a283be';
 
 const SHORT_APPENDIX = 25;
 // Words that show a question is about the Code as a book, not about an installation.

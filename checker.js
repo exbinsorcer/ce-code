@@ -1,21 +1,21 @@
 // Tests each answer choice against the book. Plain code, no AI.
 // It names a choice only when exactly one has the book behind it. Anything else is "not sure", because a wrong answer is far worse.
-import { findInBook, watchWords, negatedWords } from './finder.js?v=a32e38e3';
-import { wordsOf } from './rules.js?v=a32e38e3';
-import { readTable as readBookTable } from './tables.js?v=a32e38e3';
-import { checkNumbers } from './check-numbers.js?v=a32e38e3';
-import { checkRules } from './check-rules.js?v=a32e38e3';
-import { checkSituation } from './check-situations.js?v=a32e38e3';
-import { checkDefinition } from './check-definitions.js?v=a32e38e3';
-import { checkWhichRule } from './check-which-rule.js?v=a32e38e3';
-import { checkOutside } from './check-outside.js?v=a32e38e3';
-import { explainOthers } from './others.js?v=a32e38e3';
-import { checkCalculation } from './calc/check.js?v=a32e38e3';
-import { checkRuleWords, rulesFor } from './check-rule-words.js?v=a32e38e3';
-import { checkAbout } from './check-about.js?v=a32e38e3';
-import { checkRuleStructure } from './check-rule-structure.js?v=a32e38e3';
-import { checkNegative } from './check-negative.js?v=a32e38e3';
-import { checkDefinitionStatement, checkCombined } from './check-definition-statements.js?v=a32e38e3';
+import { findInBook, watchWords, negatedWords } from './finder.js?v=a8a283be';
+import { wordsOf } from './rules.js?v=a8a283be';
+import { readTable as readBookTable } from './tables.js?v=a8a283be';
+import { checkNumbers } from './check-numbers.js?v=a8a283be';
+import { checkRules } from './check-rules.js?v=a8a283be';
+import { checkSituation } from './check-situations.js?v=a8a283be';
+import { checkDefinition } from './check-definitions.js?v=a8a283be';
+import { checkWhichRule } from './check-which-rule.js?v=a8a283be';
+import { checkOutside } from './check-outside.js?v=a8a283be';
+import { explainOthers } from './others.js?v=a8a283be';
+import { checkCalculation } from './calc/check.js?v=a8a283be';
+import { checkRuleWords, rulesFor } from './check-rule-words.js?v=a8a283be';
+import { checkAbout } from './check-about.js?v=a8a283be';
+import { checkRuleStructure } from './check-rule-structure.js?v=a8a283be';
+import { checkNegative } from './check-negative.js?v=a8a283be';
+import { checkDefinitionStatement, checkCombined } from './check-definition-statements.js?v=a8a283be';
 
 const JOINING = new Set(['and', 'or', 'of', 'the', 'a', 'an', 'in', 'on', 'to', 'for', 'with', 'use', 'used']);
 const meaningful = (text) => wordsOf(text).filter((w) => !JOINING.has(w));
