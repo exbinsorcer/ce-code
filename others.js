@@ -1,10 +1,10 @@
 // Says why each other choice loses, from the same place in the book that backs the answer. Plain code, no AI.
 // It never changes which choice is picked. If another choice comes close, the rating drops one step and says why.
 // It holds no book text; it reads the place again at run time.
-import { wordsOf } from './rules.js?v=a8a283be';
-import { parseQuestion } from './engine.js?v=a8a283be';
-import { splitRule } from './check-rules.js?v=a8a283be';
-import { numbersIn } from './check-numbers.js?v=a8a283be';
+import { wordsOf } from './rules.js?v=4aa3f35a';
+import { parseQuestion } from './engine.js?v=4aa3f35a';
+import { splitRule } from './check-rules.js?v=4aa3f35a';
+import { numbersIn } from './check-numbers.js?v=4aa3f35a';
 
 const LIGHT = new Set(['a', 'an', 'and', 'or', 'of', 'the', 'to', 'in', 'on', 'for', 'with', 'by', 'at', 'is', 'are', 'be', 'it', 'its', 'as', 'that', 'this', 'from']);
 const keyWords = (text) => [...new Set(wordsOf(text).filter((w) => !LIGHT.has(w) && !/^\d/.test(w)))];

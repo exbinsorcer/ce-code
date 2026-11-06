@@ -1,9 +1,10 @@
 // Turns a question into where to look in the book, following the steps taught in class:
 // key words, definitions, contents, index, rule titles, then any table, note or rule the rule points to.
-// It never decides the answer. It uses the question only, not the answer choices, so it cannot give one away.
-import { parseQuestion } from './engine.js?v=a8a283be';
-import { wordsOf, compareRules, lookup } from './rules.js?v=a8a283be';
-import { tablesNamedIn } from './map.js?v=a8a283be';
+// It never decides the answer. From the answer choices it only takes words that most of them share, which cannot point
+// to one choice, so it cannot give the answer away.
+import { parseQuestion } from './engine.js?v=4aa3f35a';
+import { wordsOf, compareRules, lookup } from './rules.js?v=4aa3f35a';
+import { tablesNamedIn } from './map.js?v=4aa3f35a';
 
 const STOP = new Set(`a about above after all also an and any are as at be been being below between both but by can could do does during each every
 for from had has have how i if in into is it its of on onto or our per should so some such than that the their them then there these they this
@@ -223,6 +224,41 @@ function expandRange(ready, from, to) {
 
 const round = (n) => Math.round(n * 100) / 100;
 
+// How much a word shared by most answer choices counts, next to 1 for a word of the question itself.
+const CHOICE_WEIGHT = 0.6;
+// Choices that only point at other choices say nothing about the subject.
+const POINTS_AT_CHOICES = /^\s*(?:all|none|neither|both)\s+of\s+the\s+(?:above|these)\W*$|^\s*answers?\s+[a-e](?:\s*(?:,|and|&)\s*[a-e])+\b/i;
+
+// The ideas that more than half of the answer choices share (at least two), each with the forms of the word the
+// choices use. Ideas the question already has are left out.
+function sharedChoiceWords(options = [], have, dropSet) {
+  const texts = options.map((o) => String(o.text || '')).filter((t) => t.trim() && !POINTS_AT_CHOICES.test(t));
+  if (texts.length < 2) return [];
+  const need = Math.max(2, Math.floor(texts.length / 2) + 1);
+  const found = new Map();
+  for (const t of texts) {
+    const here = new Map();
+    for (const w of t.toLowerCase().split(/[^\p{L}\p{N}-]+/u)) {
+      if (!w || w.length < 3 || STOP.has(w) || CONDITIONS.includes(w) || /\d/.test(w) || dropSet.has(w)) continue;
+      for (const s of lightWords(w)) {
+        if (STOP_WORDS.has(s)) continue;
+        const key = rootOf(s) || s;
+        if (!here.has(key)) here.set(key, { word: w, forms: new Set() });
+        here.get(key).forms.add(s);
+        for (const e of BOOK_WORDS[w] || []) for (const b of lightWords(e)) here.get(key).forms.add(b);
+      }
+    }
+    for (const [key, { word, forms }] of here) {
+      const had = found.get(key) || { word, count: 0, forms: new Set() };
+      had.count++;
+      for (const f of forms) had.forms.add(f);
+      found.set(key, had);
+    }
+  }
+  return [...found].filter(([key, f]) => f.count >= need && !have.has(key) && ![...f.forms].some((x) => have.has(x)))
+    .map(([, f]) => ({ word: f.word, words: rooted(new Set(f.forms)) }));
+}
+
 export function findInBook(raw, index, map, ready, { dropped = [] } = {}) {
   const parsed = parseQuestion(raw);
   const stem = parsed.stem || String(raw).trim();
@@ -246,6 +282,10 @@ export function findInBook(raw, index, map, ready, { dropped = [] } = {}) {
     const early = original.indexOf(w) < 3 ? 1.25 : 1;
     own.forEach((s, i) => ideas.push({ words: rooted(new Set([s, ...(i === 0 ? extra.flatMap((e) => lightWords(e)) : [])])), early }));
   }
+  // Words that most answer choices share say what the question is about, not which choice is right: a word that is in
+  // most of the choices cannot point to one of them. They count for less than the question's own words.
+  const fromChoices = asked ? [] : sharedChoiceWords(parsed.options, new Set(ideas.flatMap((i) => [...i.words])), dropSet);
+  for (const c of fromChoices) ideas.push({ words: c.words, early: CHOICE_WEIGHT });
   const allWords = new Set(ideas.flatMap((i) => [...i.words]));
   const defWords = asked ? lightWords(asked) : null;
   const measure = (words) => {
@@ -465,7 +505,7 @@ export function findInBook(raw, index, map, ready, { dropped = [] } = {}) {
   else route = { go: 'none', why: 'I could not match these words. Try other words, or check the Index by hand.' };
 
   return {
-    stem, options: parsed.options, keywords: original, dropped: original.filter((w) => dropSet.has(w)), bookWords,
+    stem, options: parsed.options, keywords: original, dropped: original.filter((w) => dropSet.has(w)), bookWords, fromChoices: fromChoices.map((c) => c.word),
     watch: watchWords(stem), negated: negatedWords(stem), route, definitions: definitions.map((d) => ({ term: d.term, page: d.page, text: d.text, y: d.y, endY: d.endY })),
     headings, scope, places: places.slice(0, 3), marks: [...allWords],
     // Entries far behind the best one are left out. The places they name can still show in the list of rules and tables.

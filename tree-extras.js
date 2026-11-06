@@ -1,6 +1,6 @@
 // Extras for the question tree, as plain data: your own working in a calculation, the route check after Lock it in,
 // replaying a route from memory, and what's new. No DOM, no network, no AI, and no words from the book.
-import { SKIP, NEXT } from './tree.js?v=a8a283be';
+import { SKIP, NEXT } from './tree.js?v=4aa3f35a';
 
 /* ---------- Your own numbers ---------- */
 // Each part is a sum you type yourself: a number, a sign, a number, and your answer.
